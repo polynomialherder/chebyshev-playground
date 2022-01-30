@@ -38,7 +38,7 @@ def polynomial_factory(n, E):
         roots chosen between max(E) and min(E), inclusive. The returned polynomial is
         normalized to have uniform norm of unity
     """
-    roots = [uniform(min(E), max(E)) for i in range(n)]
+    roots = [uniform(E.min(), E.max()) for i in range(n)]
     coefficients = polyfromroots(roots)
     Pp = Poly(coefficients)
     return Pp / norm(Pp(E), np.Inf)
@@ -121,7 +121,7 @@ class ChebyshevPolynomial:
 
     @cached_property
     def right(self):
-        upper_bound = max(self.critical_points)
+        upper_bound = self.critical_points.max()
         return self.X[upper_bound < self.X]
 
 
@@ -224,7 +224,7 @@ class ChebyshevPolynomial:
     def plot_guidelines(self):
         if not self.absolute:
             self.ax.hlines(-1, self.X.min(), self.X.max(), colors='grey')
-        self.ax.hlines(1, min(self.X), max(self.X), colors='grey')
+        self.ax.hlines(1, self.X.min(), self.X.max(), colors='grey')
 
 
     def plot_classical(self):
@@ -238,7 +238,7 @@ class ChebyshevPolynomial:
 
     def configure_plot(self):
         self.ax.grid()
-        self.ax.set_xlim(min(self.X), max(self.X))
+        self.ax.set_xlim(self.X.min(), self.X.max())
         if not self.absolute:
             self.ax.set_ylim(-2, 2)
         else:
