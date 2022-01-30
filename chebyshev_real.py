@@ -121,7 +121,7 @@ class ChebyshevPolynomial:
 
     @cached_property
     def right(self):
-        upper_bound = self.critical_points.max()
+        upper_bound = max(self.critical_points)
         return self.X[upper_bound < self.X]
 
 
