@@ -1,10 +1,12 @@
 import random
+import time
 import warnings
 
 from itertools import permutations, pairwise
 from functools import partial, cached_property
 from random import uniform
 
+import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -13,6 +15,11 @@ from scipy.linalg import norm
 from scipy.interpolate import lagrange
 
 warnings.filterwarnings('ignore')
+
+matplotlib.rcParams.update({
+    "text.usetex": True,
+    "text.latex.preamble": r'\usepackage{amsmath}'
+})
 
 class Poly(Polynomial):
 
@@ -84,11 +91,15 @@ def polynomial_factory(n, E):
 
 class ChebyshevPolynomial:
 
-    def __init__(self, n, X, seed=1):
+    def __init__(self, n, X, seed=1, absolute=False):
         self.n = n
         self.X = X
         self.seed = seed
-        self.domain_size = len(X)
+        self.domain_size = X.size
+        self.absolute = absolute
+        # Figure and access properties for plotting
+        self.fig = None
+        self.ax = None
 
     @cached_property
     def nodes(self):
@@ -168,74 +179,107 @@ class ChebyshevPolynomial:
 
     @cached_property
     def p(self):
-        return self.polynomial
+        return Poly(self.polynomial)
 
     @cached_property
     def comparison_polynomials(self):
         return [polynomial_factory(self.n, self.E) for i in range(10)]
 
-    def generate_plot(self, show_classical=True, comparison_polynomials=True, absolute=False):
-        """ TODO: Decompose this into smaller methods
-        """
-        fig, ax = plt.subplots(figsize=(20, 16))
+
+    def initialize_plot(self, size=(20, 16)):
+        if self.fig:
+            self.clear_plot()
+        self.fig, self.ax = plt.subplots(figsize=size)
+
+    def clear_plot(self):
+        self.fig.clear()
+        self.ax.clear()
+        self.fig = self.ax = None
+
+    @staticmethod
+    def label(iteration, label):
+        if not iteration:
+            return label
+        return None
+
+    def handle_absolute(self, data):
+        if self.absolute:
+            return np.absolute(data)
+        return data
+
+    def plot_gaps(self):
         for idx, gap in enumerate(self.gaps):
-            if not idx:
-                label = "Gap"
-            else:
-                label = None
+            #label = self.label(idx, "$C_n(G_k))$")
+            y = self.handle_absolute(self(gap))
+            self.ax.plot(gap, y, "--", color="indigo", label=None)
 
-            if not absolute:
-                ax.plot(gap, self(gap), "--", color="indigo", label=label)
-            else:
-                ax.plot(gap, np.absolute(self(gap)), "--", color="indigo", label=label)
-
+    def plot_Ek(self):
         for idx, E in enumerate(self.Ek):
-            if not idx:
-                curve_label = "$C_n$"
-                domain_label = "$E_n$"
-            else:
-                curve_label = domain_label = None
-            if not absolute:
-                ax.plot(E, self(E), "-r", label=curve_label, color="indigo")
-            else:
-                ax.plot(E, np.absolute(self(E)), "-r", label=curve_label, color="indigo")
-            ax.hlines(0, min(E), max(E), label=domain_label, colors="indigo", linewidth=10)
+            curve_label = self.label(idx, f"$C_n :$ {self.p._repr_latex_()}")
+            domain_label = self.label(idx, "$E_k$")
+            y =  self.handle_absolute(self(E))
+            self.ax.plot(E, y, "-r", label=curve_label, color="indigo")
+            self.ax.hlines(0, E.min(), E.max(), label=domain_label, colors="indigo", linewidth=10)
 
-        if comparison_polynomials:
-            for p in self.comparison_polynomials:
-                if not absolute:
-                    ax.plot(self.X, p(self.X), "-", label=f"{p}")
-                else:
-                    ax.plot(self.X, np.absolute(p(self.X)), "-", label=f"{p}")
+    def plot_comparison_polynomials(self):
+        for p in self.comparison_polynomials:
+            y = self.handle_absolute(p(self.X))
+            self.ax.plot(self.X, y, "-", label=f"{p._repr_latex_()}")
 
-        if not absolute:
-            ax.plot(self.left, self(self.left), "--", label=None, color="indigo")
-            ax.plot(self.right, self(self.right), "--", label=None, color="indigo")
-            ax.plot(self.maximum_points, self.maxima, "o", color="red")
-            ax.plot(self.minimum_points, self.minima, "o", color="red")
-            ax.hlines(-1, min(self.X), max(self.X), colors='grey')
 
+    def plot_left_and_right(self):
+        left_y = self.handle_absolute(self(self.left))
+        right_y = self.handle_absolute(self(self.right))
+        self.ax.plot(self.left, left_y, "--", label=None, color="indigo")
+        self.ax.plot(self.right, right_y, "--", label=None, color="indigo")
+
+
+    def plot_extrema(self):
+        self.ax.plot(self.maximum_points, self.maxima, "o", color="red")
+        minima = self.handle_absolute(self.minima)
+        self.ax.plot(self.minimum_points, minima, "o", color="red")
+
+    def plot_guidelines(self):
+        if not self.absolute:
+            self.ax.hlines(-1, self.X.min(), self.X.max(), colors='grey')
+        self.ax.hlines(1, min(self.X), max(self.X), colors='grey')
+
+    def plot_classical(self):
+        self.ax.plot(self.X, T(self.n, self.X), "-", label='$T_n$')
+
+    def configure_legend(self):
+        self.ax.legend(bbox_to_anchor=(1.04,1), loc="upper left")
+        self.fig.subplots_adjust(right=0.6)
+
+    def configure_plot(self):
+        self.ax.grid()
+        self.ax.set_xlim(min(self.X), max(self.X))
+        if not self.absolute:
+            self.ax.set_ylim(-2, 2)
         else:
-            ax.plot(self.left, np.absolute(self(self.left)), "--", label=None, color="indigo")
-            ax.plot(self.right, np.absolute(self(self.right)), "--", label=None, color="indigo")
-            ax.plot(self.maximum_points, self.maxima, "o", color="red")
-            ax.plot(self.minimum_points, abs(self.minima), "o", color="red")
+            self.ax.set_ylim(0, 2)
 
-        ax.hlines(1, min(self.X), max(self.X), colors='grey')
 
-        if show_classical:
-            ax.plot(self.X, T(self.n, self.X), "-", label='$T_n$')
+    def save_plot(self, path):
+        self.fig.savefig(path)
 
-        #ax.legend()
-        ax.legend(bbox_to_anchor=(1.04,1), loc="upper left")
-        fig.subplots_adjust(right=0.6)
-        ax.grid()
-        ax.set_xlim(min(self.X), max(self.X))
-        if not absolute:
-            ax.set_ylim(-2, 2)
-        else:
-            ax.set_ylim(0, 2)
-        fig.show()
+    def show_plot(self):
+        self.fig.show()
+
+    def generate_plot(self, show=True, save_to=None):
+        self.initialize_plot()
+        self.plot_Ek()
+        self.plot_gaps()
+        self.plot_comparison_polynomials()
+        self.plot_left_and_right()
+        self.plot_extrema()
+        self.plot_guidelines()
+        self.configure_legend()
+        self.configure_plot()
+        if show:
+            self.show_plot()
+        if save_to:
+            self.save_plot(save_to)
 
 
     def __call__(self, x):
@@ -266,5 +310,6 @@ def functional_gap(X, Y, absolute_bound):
 if __name__ == '__main__':
     X = np.linspace(-1, 1, 10000)
     p = ChebyshevPolynomial(3, X)
-    p.generate_plot(show_classical=False)
-    p.generate_plot(absolute=True, show_classical=False)
+    p.generate_plot(save_to="chebyshev-polynomial.png")
+    p.absolute = True
+    p.generate_plot(save_to="chebyshev-polynomial-absolute.png")
