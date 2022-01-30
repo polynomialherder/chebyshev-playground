@@ -289,24 +289,6 @@ class ChebyshevPolynomial:
         return f"{self.polynomial}"
 
 
-def chebyshev(n, E):
-    nodes = np.array(random.choices(E, k=n+1))
-    print(nodes)
-    nodes.sort()
-    Y = np.array([(-1)**(n-k) for k in range(n+1)])
-    H = lagrange(nodes, Y)
-    return H
-
-def extrema(X, Y, eta=1):
-    extrema_indices = np.isclose(abs(Y), eta)
-    eta = X[extrema_indices]
-    return X[extrema_indices], Y[extrema_indices]
-
-def functional_gap(X, Y, absolute_bound):
-    indices = np.isclose(abs(Y), absolute_bound, atol=0.001)
-    return X[indices], Y[indices]
-
-
 if __name__ == '__main__':
     X = np.linspace(-1, 1, 10000)
     p = ChebyshevPolynomial(3, X)
