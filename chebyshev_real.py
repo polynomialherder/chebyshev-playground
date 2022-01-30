@@ -55,7 +55,7 @@ class ChebyshevPolynomial:
         self.seed = seed
         self.domain_size = X.size
         self.absolute = absolute
-        # Figure and access properties for plotting
+        # Figure and axis properties for plotting
         self.fig = None
         self.ax = None
 
@@ -161,6 +161,11 @@ class ChebyshevPolynomial:
     def comparison_polynomials(self):
         return [polynomial_factory(self.n, self.E) for i in range(10)]
 
+    @property
+    def comparison_polynomial_generator(self):
+        for polynomial in self.comparison_polynomials:
+            yield polynomial
+
 
     def initialize_plot(self, size=(25, 15)):
         if self.fig:
@@ -189,7 +194,7 @@ class ChebyshevPolynomial:
 
     def plot_gaps(self):
         for idx, gap in enumerate(self.gaps):
-            y = self.handle_absolute(self(gap))
+            y = self(gap)
             self.ax.plot(gap, y, "--", color="indigo", label=None)
 
 
@@ -197,7 +202,7 @@ class ChebyshevPolynomial:
         for idx, E in enumerate(self.Ek):
             curve_label = self.label(idx, f"$C_n :$ {self.p._repr_latex_()}")
             domain_label = self.label(idx, "$E_k$")
-            y =  self.handle_absolute(self(E))
+            y =  self(E)
             self.ax.plot(E, y, "-r", label=curve_label, color="indigo")
             self.ax.hlines(0, E.min(), E.max(), label=domain_label, colors="indigo", linewidth=10)
 
@@ -209,8 +214,8 @@ class ChebyshevPolynomial:
 
 
     def plot_left_and_right(self):
-        left_y = self.handle_absolute(self(self.left))
-        right_y = self.handle_absolute(self(self.right))
+        left_y = self(self.left)
+        right_y = self(self.right)
         self.ax.plot(self.left, left_y, "--", label=None, color="indigo")
         self.ax.plot(self.right, right_y, "--", label=None, color="indigo")
 
@@ -270,7 +275,8 @@ class ChebyshevPolynomial:
 
 
     def __call__(self, x):
-        return self.polynomial(x)
+        Y = self.polynomial(x)
+        return Y if not self.absolute else np.absolute(Y)
 
 
     def __repr__(self):
@@ -326,9 +332,36 @@ class Poly(Polynomial):
         return out
 
 
-if __name__ == '__main__':
-    X = np.linspace(-1, 1, 10000)
-    p = ChebyshevPolynomial(3, X)
-    p.generate_plot(save_to="chebyshev-polynomial.png", show=False)
+# Sandbox code
+
+def contour_plot(p):
+    X = np.linspace(-1, 1, 1000)
+    Y = np.linspace(-2, 2, 1000)
+    xv, yv = np.meshgrid(X, Y)
     p.absolute = True
-    p.generate_plot(save_to="chebyshev-polynomial-absolute.png", show=False)
+    Z = xv + 1j*yv
+    zv = p(Z)
+    D = np.array([zv - abs(f(Z)) for f in p.comparison_polynomials])
+    mins = np.amin(D, 0)
+    midpoint = (p.E.min() + p.E.max())/2
+    radius = p.E.max() - midpoint
+    plt.contourf(xv, yv, mins)
+    plt.colorbar()
+    #ax.clabel(CS, inline=True, fontsize=10)
+    plt.savefig("contour.png")
+
+
+def surface_plot(p):
+    X = np.linspace(-1, 1, 10000)
+    Y = np.linspace(-2, 2, 10000)
+    xv, yv = np.meshgrid(X, Y)
+    Z = xv + 1j*yv
+
+if __name__ == '__main__':
+    X = np.linspace(-1, 1, 100000)
+    p = ChebyshevPolynomial(2, X)
+    contour_plot(p)
+    p.generate_plot(save_to="cheb-absolute.png")
+    p.absolute = False
+    p.generate_plot(save_to="cheb.png")
+    
