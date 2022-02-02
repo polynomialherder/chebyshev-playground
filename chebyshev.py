@@ -151,20 +151,24 @@ class ChebyshevPolynomial:
 
 
     @cached_property
+    def E_intervals(self):
+        intervals = []
+        for interval in self.Ek:
+            intervals.append(
+                (min(interval), max(interval))
+            )
+        return intervals
+
+
+    @cached_property
     def gaps(self):
         _, gaps = self.calculate_intervals
         return gaps
 
 
-
     @cached_property
     def comparison_polynomials(self):
-        return [polynomial_factory(self.n, self.E) for i in range(10)]
-
-    @property
-    def comparison_polynomial_generator(self):
-        for polynomial in self.comparison_polynomials:
-            yield polynomial
+        return [polynomial_factory(self.n, self.E) for i in range(100)]
 
 
     def initialize_plot(self, size=(25, 15)):
@@ -364,4 +368,3 @@ if __name__ == '__main__':
     p.generate_plot(save_to="cheb-absolute.png")
     p.absolute = False
     p.generate_plot(save_to="cheb.png")
-    
