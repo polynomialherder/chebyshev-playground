@@ -120,6 +120,7 @@ def signed_intervals(E, roots, n):
             negative_intervals.append(interval_info)
         else:
             positive_intervals.append(interval_info)
+
     return negative_intervals, positive_intervals
 
 
@@ -134,8 +135,8 @@ def generate_nodes(combs):
         yield np.array(nodes)
 
 
-def spawn(func, *args):
-    proc = mp.Process(target=func, args=args)
+def spawn(func, *args, **kwargs):
+    proc = mp.Process(target=func, args=args, kwargs=kwargs)
     proc.start()
     proc.join()
 
@@ -161,17 +162,19 @@ class Store:
 @dataclass
 class Experiment:
 
-    z: complex
     C: ChebyshevPolynomial
-    v: list = None
+    m_: int = None
     winning: Store = Store()
     losing: Store = Store()
+    all: Store = Store()
     success: int = 0
     discarded: int = 0
 
 
     @property
     def m(self):
+        if self.m_:
+            return self.m_
         return self.C.n + 1
 
 
@@ -207,12 +210,10 @@ class Experiment:
 
     def check_points(self, v, z):
 
-        self.v = v
-
         idx_range = range(self.m)
 
         C = self.C
-        l = self.l(v, self.Cv)
+        l = self.l(v, C(v))
 
         products = []
         lemmas = []
@@ -299,6 +300,7 @@ class Experiment:
 
         t = self
         l = self.l(v, self.C(v))
+        self.all.v.append(v)
 
         def check_points(z):
 
@@ -306,9 +308,11 @@ class Experiment:
 
             C = t.C
 
-            products = []
+            products = 0
 
             current = None
+
+
             for i, j in t.index_product:
 
                 ci = l.denominator(i)
@@ -326,13 +330,22 @@ class Experiment:
                 current_sign = np.sign(product)
                 if current is None:
                     current = current_sign
+                    products += product
                     continue
 
-                if current_sign ==  current:
+                if current_sign == current:
                     current = current_sign
+                    products += product
                     continue
 
                 return False
+
+            abs_Cz = abs(C(z))
+
+            if not np.all(np.isclose(abs_Cz **2, products, atol=0.1)):
+                print(f"Discarding results for {v} since they are unreliable (got {abs_Cz=} vs {products=})")
+                return False
+
             return True
 
         return np.vectorize(check_points)(zv)
@@ -340,20 +353,27 @@ class Experiment:
 
     def plot_lemma_(self, xv, yv, zv, v=None, holds=None, uniquifier=""):
         fig, ax = plt.subplots()
-        if not holds:
+        if holds is None:
             holds = self.check_points_vectorized(v, zv)
+        if v is not None:
             ax.plot(v, np.zeros(len(v)), "ro", label="$x_i$")
         cmap = plt.contourf(xv, yv, holds)
         plot_disks(ax, self.C)
         ax.set_xlim(self.C.E.min(), self.C.E.max())
+        ax.set_ylim(-self.C.E_disk_radius, self.C.E_disk_radius)
         fig.colorbar(cmap)
         ax.plot(self.C.polynomial.r, np.zeros(len(self.C.polynomial.r)), "*", label="Roots of $C_n$")
-        
+        for start, end in pairwise(sorted(self.C.polynomial.r)):
+            midpoint = (start + end)/2
+            radius = (end - start)/2
+            circ = plt.Circle((midpoint, 0), radius, fill=False, linestyle="dashdot", color="blue")
+            ax.add_patch(circ)
+
         fig.savefig(f"Trials/{C.n}/{C.id}/lemma-{uniquifier}.png")
 
 
     def plot_lemma(self, xv, yv, zv, v=None, holds=None, uniquifier=""):
-        spawn(self.plot_lemma_, xv, yv, zv, v, uniquifier)
+        spawn(self.plot_lemma_, xv, yv, zv, v=v, holds=holds, uniquifier=uniquifier)
 
 
 
@@ -361,7 +381,7 @@ if __name__ == '__main__':
     n = 3
     X_ = np.linspace(-1, 1, 10000000)
 
-    for _ in range(100):
+    for _ in range(1):
 
         X = np.linspace(-1, 1, 10000)
         Y = np.linspace(-1, 1, 10000)
@@ -370,70 +390,33 @@ if __name__ == '__main__':
 
         print(f"Generating a Chebyshev polynomial and set E on [-1, 1]")
         C = ChebyshevPolynomial(n, X_)
+        E_interval = (C.E.min(), C.E.max())
         print(f"Generated the Chebyshev polynomial {C.id}")
 
-        try:
-            print(f"Masking the regions of z we are interested in")
-            mask = outside_gaps_inside_Edisk(C, zv) & (zv.real > C.E_intervals[1][0]) #& (zv.real < C.polynomial.r[1]) & (zv.imag > 0) & (zv.imag < 1.5*C.Ek_radii[1])
-            z = random.choice(zv[mask])
-
-            t = Experiment(z, C, C.n + 1)
-        except:
-            print(f"Couldn't find any z in the region of interest; retrying")
-            continue
-
-        trials = 200
-        print(f"Masking was a success! Beginning {trials} trials")
-        m = n+1
-        for _ in range(trials):
-            negative, positive = signed_intervals(C.E, C.polynomial.r, C.n)
+        trials = 1000
+        print(f"Beginning {trials} trials")
+        m = 6
+        X = np.linspace(-1, 1, 100)
+        Y = np.linspace(-1, 1, 100)
+        xv,  yv = np.meshgrid(X,  Y)
+        zv = xv + 1j*yv
+        holds = np.zeros(zv.shape)
+        t = Experiment(C, m)
+        for j in range(trials):
+            roots = C.polynomial.r
+            negative, positive = signed_intervals(C.E, roots, m)
+            extra = [(roots[0], roots[0]), (roots[1], roots[1]), (roots[2], roots[2])]
             combs = combinations_with_replacement(negative + positive, m)
-            # combs = [
-            #     (negative[0], positive[0], positive[0], negative[1]),
-            #     (positive[0], positive[0], negative[1], positive[1]),
-            # ]
-            X = np.linspace(-1, 1, 100)
-            Y = np.linspace(-1, 1, 100)
-            xv,  yv = np.meshgrid(X,  Y)
-            zv = xv + 1j*yv
-            holds = np.zeros(zv.shape)
+            Path("Trials").mkdir(exist_ok=True)
+            Path(f"Trials/{C.n}/").mkdir(exist_ok=True)
+            Path(f"Trials/{C.n}/{C.id}").mkdir(exist_ok=True)
             for i, v in enumerate(generate_nodes(combs)):
                 v = np.sort(v)
-                holds = np.logical_or(holds, t.check_points_vectorized(v, zv))
-                t.check_points(v, z)
+                
+                holds_current = t.check_points_vectorized(v, zv)
+                holds = np.logical_or(holds, holds_current)
 
-        t.plot_lemma(xv, yv, zv, holds=holds)
-
-        # print(f"Finished trials; found {t.winning.n} sets of interpolation points satisfying the lemma for {C.id}, discarded {t.discarded}")
-
-        # Path("Trials").mkdir(exist_ok=True)
-        # Path(f"Trials/{C.n}/").mkdir(exist_ok=True)
-        # Path(f"Trials/{C.n}/{C.id}").mkdir(exist_ok=True)
-
-        # print(f"Generating plots of winning sets")
-        # t.plot_winning(n=t.winning.n)
-        # print(f"Generating plots of losing sets")
-        # t.plot_losing(n=25)
-
-        # X = np.linspace(-1, 1, 100)
-        # Y = np.linspace(-1, 1, 100)
-        # xv,  yv = np.meshgrid(X,  Y)
-        # zv = xv + 1j*yv
-
-        # for i, v in enumerate(t.winning.v):
-        #     print(f"Generating plot of z for which winning set #{i} satisfies the lemma")
-        #     t.plot_lemma(xv, yv, zv, v, uniquifier=f"-winning-{i}")
-
-
-        # for i, v in enumerate(t.losing.v):
-        #     print(f"Generating plot of z for which losing set #{i} satisfies the lemma")
-        #     t.plot_lemma(xv, yv, zv, v, uniquifier=f"-losing-{i}")
-
-            
-
-        
-
-        
-
-
+                print(f"Plotting region where the lemma holds so far (trial #{j}, iteration #{i})")
+                t.plot_lemma(xv, yv, zv, v=v, holds=holds_current, uniquifier=f"region-where-holds-for-iteration-{j}-{i}")
+                t.plot_lemma(xv, yv, zv, holds=holds, uniquifier=f"region-where-holds-{j}-{i}")
 
