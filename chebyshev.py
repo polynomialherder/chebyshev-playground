@@ -4,7 +4,7 @@ import time
 import warnings
 
 from itertools import permutations, pairwise
-from functools import partial, cached_property
+from functools import partial, cached_property, lru_cache
 from random import uniform
 
 import matplotlib
@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from lagrange import LagrangePolynomial
 from numpy.polynomial.polynomial import Polynomial, polyfromroots
 from scipy.linalg import norm
 from scipy.interpolate import lagrange
@@ -26,7 +27,7 @@ matplotlib.rcParams.update({
 
 def T(n, x):
     """ Classical Chebyshev polynomial implementation. Note that this implementation
-        is problematic performancewise since thet last 2 arguments are both evaluated for all x
+        is problematic performancewise since the last 2 arguments are both evaluated for all inputs
     """
     return np.where(
         abs(x) <= 1,
@@ -207,6 +208,56 @@ class ChebyshevPolynomial:
     def gaps(self):
         _, gaps = self.calculate_intervals
         return gaps
+
+
+    @lru_cache
+    def Ek_nodes(self, v):
+        d = []
+        for idx, start_end in enumerate(self.E_intervals):
+            start, end = start_end
+            nodes = []
+            for i, node in enumerate(v):
+                if (start <= node <= end) or (np.isclose(node, start, atol=1e-5) or np.isclose(end, node, atol=1e-5)):
+
+                    nodes.append(i)
+            d.append(nodes)
+        return d
+
+
+    def group_
+
+
+    @lru_cache(maxsize=128)
+    def gap_nodes(self, v):
+        d = []
+        left_gap = []
+        middle = []
+        right_gap = []
+
+        # TOOD: Most of the complexity in this method comes from the ChebyshevPolynomial.gap_intervals
+        # method not representing the infinite gaps (-inf, E.min()), (E.max(), inf)
+        # We should include those values and refactor any existing code if needed
+        min_E = self.E.min()
+        max_E = self.E.max()
+        for _ in enumerate(self.gap_intervals):
+            middle.append([])
+
+        for i, node in enumerate(v):
+            if node in self.critical_points:
+                continue
+            if node < min_E and not np.isclose(min_E, node):
+                left_gap.append(i)
+            elif node > max_E and not np.isclose(max_E, node):
+                right_gap.append(i)
+            for k, start_end in enumerate(self.gap_intervals):
+                start, end = start_end
+                if start < node < end:
+                    middle[k].append(i)
+
+        d.append(left_gap)
+        d.extend(middle)
+        d.append(right_gap)
+        return d
 
 
     @property

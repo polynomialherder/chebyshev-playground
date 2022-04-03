@@ -296,6 +296,86 @@ class Experiment:
         return satisfies
 
 
+    def check_points_grouped(self, v, z):
+        """ Return a boolean array indicating over which z the inequality
+            G_k(z)*G_n(z) holds for all k, z pairs
+
+            TODO: - Decompose this method into smaller methods/functions, moving logic into
+                    the ChebyshevPolynomial as appropriate
+                  - Lots of opporotunities to improve memory and compute performance
+        """
+
+        t = self
+        l = self.l(v, self.C(v))
+
+        # State tracking for debugging
+        self.all.v.append(v)
+
+        idx_range = range(t.m)
+
+        C = t.C
+        abs_Cz = np.abs(C(z))
+        self.all.Cv.append(C(v))
+
+        current = None
+
+        Gk = []
+
+        # TODO: We use a tuple here to take advantage of the method's lru cache
+        #       In practice this logic should be internal to the method
+        v0 = tuple(v)
+
+        # For each interpolation node in v, group its index with a gap or an interval Ek
+        # together with other indices corresponding to nodes in that gap or Ek
+        for indices in C.Ek_nodes(v0) + C.gap_nodes(v0):
+            if not indices:
+                continue
+
+            # Compute the sum G_k for each of the nodes in the group
+            G = 0
+            for idx in indices:
+
+                G += C(v[idx])*l.l_piecemeal(idx, z)
+
+            Gk.append(G)
+
+        # Initialize a boolean array of True values. This will be our accumulator
+        # that we'll be and'ing to check whether the inequality holds
+        holds = np.ones(z.shape)
+        # Compute conj(G_k) * G_n for all k, n pairs
+        # Track each product term so that we can make sure the sum
+        # aligns with |C(z)|^2
+        products = []
+        previous = None
+        range_Gk = range(len(Gk))
+        for i, j in product(range_Gk, range_Gk):
+
+            prod_ = (Gk[i].conjugate()*Gk[j]).real
+            products.append(prod_)
+            current_sign = np.sign(prod_)
+
+            # First iteration case, nothing to check here
+            if previous is None:
+                previous = current_sign
+                continue
+
+            # Adjust the boolean array tracking the region where the signs match
+            holds = np.logical_and(holds, current_sign == previous)
+            previous = current_sign
+
+
+        # State tracking for debugging
+        self.all.products.append(products)
+
+        # The sum of the products should be reasonably close to |C(z)|^2, otherwise
+        # our results are not meaningful
+        if not np.all(np.isclose(abs_Cz **2, sum(products), atol=1e-4)):
+            print(f"Discarding results for {v} since they are unreliable")
+            return np.zeros(z.shape)
+        return holds
+
+
+
     def check_points_vectorized(self, v, zv):
 
         t = self
@@ -311,7 +391,6 @@ class Experiment:
             products = 0
 
             current = None
-
 
             for i, j in t.index_product:
 
@@ -359,7 +438,13 @@ class Experiment:
             ax.plot(v, np.zeros(len(v)), "ro", label="$x_i$")
         cmap = plt.contourf(xv, yv, holds)
         plot_disks(ax, self.C)
-        ax.set_xlim(self.C.E.min(), self.C.E.max())
+        if v is not None:
+            if (2 in v) or (-2 in v):
+                ax.set_xlim(-2, 2)
+            else:
+                ax.set_xlim(self.C.E.min(), self.C.E.max())
+        else:
+            ax.set_xlim(self.C.E.min(), self.C.E.max())
         ax.set_ylim(-self.C.E_disk_radius, self.C.E_disk_radius)
         fig.colorbar(cmap)
         ax.plot(self.C.polynomial.r, np.zeros(len(self.C.polynomial.r)), "*", label="Roots of $C_n$")
@@ -395,28 +480,38 @@ if __name__ == '__main__':
 
         trials = 1000
         print(f"Beginning {trials} trials")
-        m = 6
-        X = np.linspace(-1, 1, 100)
-        Y = np.linspace(-1, 1, 100)
+        X = np.linspace(-1, 1, 1000)
+        Y = np.linspace(-1, 1, 1000)
         xv,  yv = np.meshgrid(X,  Y)
         zv = xv + 1j*yv
-        holds = np.zeros(zv.shape)
-        t = Experiment(C, m)
-        for j in range(trials):
+        for j in range(1, 2*n):
+            m = n+j
+            t = Experiment(C, m)
             roots = C.polynomial.r
             negative, positive = signed_intervals(C.E, roots, m)
             extra = [(roots[0], roots[0]), (roots[1], roots[1]), (roots[2], roots[2])]
-            combs = combinations_with_replacement(negative + positive, m)
+
+            gap_points = list(np.array(C.gap_midpoints) + np.array(C.gap_radii)/2) + list(np.array(C.gap_midpoints) - np.array(C.gap_radii)/2)
+            combs = combinations(C.critical_points + C.gap_midpoints + gap_points + [-2, 2], m)
             Path("Trials").mkdir(exist_ok=True)
             Path(f"Trials/{C.n}/").mkdir(exist_ok=True)
             Path(f"Trials/{C.n}/{C.id}").mkdir(exist_ok=True)
-            for i, v in enumerate(generate_nodes(combs)):
+            holds_grouped = np.zeros(zv.shape)
+            holds = np.zeros(zv.shape)
+            for i, v in enumerate(combs):
                 v = np.sort(v)
-                
+                holds_grouped_current = t.check_points_grouped(v, zv)
+                holds_grouped = np.logical_or(holds_grouped, holds_grouped_current)
+
+
                 holds_current = t.check_points_vectorized(v, zv)
                 holds = np.logical_or(holds, holds_current)
 
-                print(f"Plotting region where the lemma holds so far (trial #{j}, iteration #{i})")
-                t.plot_lemma(xv, yv, zv, v=v, holds=holds_current, uniquifier=f"region-where-holds-for-iteration-{j}-{i}")
-                t.plot_lemma(xv, yv, zv, holds=holds, uniquifier=f"region-where-holds-{j}-{i}")
+                print(f"Plotting region where the lemma holds so far ({m=}, iteration #{i})")
+                t.plot_lemma(xv, yv, zv, v=v, holds=holds_current, uniquifier=f"region-where-holds-for-iteration-{m}-{i}")
+                t.plot_lemma(xv, yv, zv, holds=holds, uniquifier=f"region-where-holds-{m}-{i}")
+
+                print(f"Plotting region where the lemma holds so far (grouped, {m=}, iteration #{i})")
+                t.plot_lemma(xv, yv, zv, v=v, holds=holds_grouped_current, uniquifier=f"grouped-region-where-holds-for-iteration-{m}-{i}")
+                t.plot_lemma(xv, yv, zv, holds=holds_grouped, uniquifier=f"grouped-region-where-holds-{m}-{i}")
 

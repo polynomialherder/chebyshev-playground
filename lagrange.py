@@ -11,6 +11,28 @@ class LagrangePolynomial:
         return np.arange(len(self.nodes))
 
 
+    def numerator_piecemeal(self, i, z):
+        prod = 1
+        for idx in self.indices:
+            if idx == i:
+                continue
+            prod *= (z - self.nodes[idx])
+        return prod
+
+    def denominator_piecemeal(self, i):
+        prod = 1
+        xi = self.nodes[i]
+        for idx in self.indices:
+            if idx == i:
+                continue
+            prod *= xi - self.nodes[idx]
+        return prod
+
+
+    def l_piecemeal(self, i, z):
+        return self.numerator_piecemeal(i, z) / self.denominator_piecemeal(i)
+
+
     def numerator(self, i, z, j=None):
         where = self.indices != i
         return np.prod(z - self.nodes, where=where)
