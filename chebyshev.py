@@ -224,9 +224,6 @@ class ChebyshevPolynomial:
         return d
 
 
-    def group_
-
-
     @lru_cache(maxsize=128)
     def gap_nodes(self, v):
         d = []
