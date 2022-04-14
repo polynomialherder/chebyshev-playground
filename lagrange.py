@@ -1,12 +1,14 @@
 import numpy as np
 
+from functools import cache, cached_property
+
 class LagrangePolynomial:
 
     def __init__(self, nodes, values):
         self.nodes = np.array(nodes)
         self.values = list(values)
 
-    @property
+    @cached_property
     def indices(self):
         return np.arange(len(self.nodes))
 
@@ -28,9 +30,15 @@ class LagrangePolynomial:
             prod *= xi - self.nodes[idx]
         return prod
 
-
     def l_piecemeal(self, i, z):
         return self.numerator_piecemeal(i, z) / self.denominator_piecemeal(i)
+
+
+    def L_piecemeal(self, z):
+        sum_ = 0
+        for i, x in enumerate(self.nodes):
+            sum_ += self.values[i]*self.l_piecemeal(i, z)
+        return sum_
 
 
     def numerator(self, i, z, j=None):
@@ -81,3 +89,7 @@ class LagrangePolynomial:
 
     def L_seq(self, z):
         return np.array(self.values)*self.lv(z)
+
+
+    def __call__(self, z):
+        return np.vectorize(self.L_piecemeal)(z)

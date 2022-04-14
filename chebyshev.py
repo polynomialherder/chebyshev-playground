@@ -51,7 +51,7 @@ class ChebyshevPolynomial:
     """ Generates a random degree n Chebyshev polynomial and domain E given a discretized space X
     """
 
-    def __init__(self, n, X, seed=1, nodes=None, known_values=None, absolute=False, compare=True):
+    def __init__(self, n, X, seed=1, nodes=None, known_values=None, absolute=False):
         self.n = n
         self.X = X
         self.seed = seed
@@ -61,7 +61,6 @@ class ChebyshevPolynomial:
         self.fig = None
         self.ax = None
         self._nodes = nodes
-        self.compare = compare
         self._known_values = known_values
 
 
@@ -103,7 +102,7 @@ class ChebyshevPolynomial:
     def known_values(self):
         if self._known_values is None:
             return np.array([(-1)**(self.n-k) for k in range(self.n+1)])
-        return np.array(self.known_values)
+        return np.array(self._known_values)
 
 
     @cached_property
@@ -227,34 +226,26 @@ class ChebyshevPolynomial:
     @lru_cache(maxsize=128)
     def gap_nodes(self, v):
         d = []
-        left_gap = []
-        middle = []
-        right_gap = []
 
-        # TOOD: Most of the complexity in this method comes from the ChebyshevPolynomial.gap_intervals
-        # method not representing the infinite gaps (-inf, E.min()), (E.max(), inf)
-        # We should include those values and refactor any existing code if needed
-        min_E = self.E.min()
-        max_E = self.E.max()
-        for _ in enumerate(self.gap_intervals):
-            middle.append([])
+        aCv = abs(C(v))
+        v_negative = v[aCv < -1]
+        size_negative = len(v_negative)
+        v_positive = v[aCv > 1]
+        size_positive = len(v_positive)
+        maximum = max(size_negative, size_positive)
+        m = self.n + 1
 
-        for i, node in enumerate(v):
-            if node in self.critical_points:
-                continue
-            if node < min_E and not np.isclose(min_E, node):
-                left_gap.append(i)
-            elif node > max_E and not np.isclose(max_E, node):
-                right_gap.append(i)
-            for k, start_end in enumerate(self.gap_intervals):
-                start, end = start_end
-                if start < node < end:
-                    middle[k].append(i)
+        correction_term = 0 if maximum == size_negative else 1
+        i = 0
+        while i < m:
+            pass
 
-        d.append(left_gap)
-        d.extend(middle)
-        d.append(right_gap)
         return d
+
+
+    @staticmethod
+    def is_within_Ek(x):
+        return abs(x) < 1 or np.isclose(x, 1)
 
 
     @property
@@ -295,6 +286,66 @@ class ChebyshevPolynomial:
                 (left + right)/2
             )
         return midpoints
+
+
+    @property
+    def gap_critical_values(self):
+        return list(sorted(self.polynomial.deriv().r))
+
+
+    def group_nodes(self, v):
+        previous = None
+        L = []
+        l = 0
+        i = 0
+        negative = []
+        positive = []
+        while i < len(v):
+
+            current = v[i]
+            sgn_current = np.sign(self(current))
+
+            if not i:
+
+                if sgn_current == 1:
+                    positive.append(l)
+                else:
+                    negative.append(l)
+
+                L.append([i])
+                l += 1
+                i += 1
+                continue
+
+            if sgn_current == 1:
+
+                if negative:
+
+                    idx = negative.pop(0)
+                    L[idx].append(i)
+                    positive.append(idx)
+
+                else:
+                    positive.append(l)
+                    L.append([i])
+                    l += 1
+
+            elif sgn_current == -1:
+
+                if positive:
+
+                    idx = positive.pop(0)
+                    L[idx].append(i)
+                    negative.append(idx)
+
+                else:
+                    negative.append(l)
+                    L.append([i])
+                    l += 1
+            i += 1
+
+        return L
+
 
 
     @property
@@ -417,11 +468,11 @@ class ChebyshevPolynomial:
         self.fig.show()
 
 
-    def generate_plots(self, comparison_polynomials=None, show=True, save_to=None):
+    def generate_plots(self, comparison_polynomials=None, show=True, save_to=None, compare=False):
         self.initialize_plot()
         self.plot_Ek()
         self.plot_gaps()
-        if self.compare:
+        if compare or comparison_polynomials is not None:
             self.plot_comparison_polynomials(
                 comparison_polynomials
             )

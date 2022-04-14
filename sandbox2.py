@@ -86,6 +86,7 @@ def plot_angles(C, z, store, i, title=""):
         circ = plt.Circle((midpoint, 0), radius, fill=False, linestyle="dashdot", color="blue")
         ax.add_patch(circ)
 
+    ax.plot(C.gap_critical_values, np.zeros(len(C.gap_critical_values)), "*", color="pink", label="Maxima of $C_n$")
     ax.plot(C.polynomial.r, np.zeros(len(C.polynomial.r)), "*", label="Roots of $C_n$")
     plot_disks(ax, C)
     ax.grid()
@@ -124,10 +125,10 @@ def signed_intervals(E, roots, n):
     return negative_intervals, positive_intervals
 
 
-def generate_nodes(combs):
-    for configuration in combs:
+def generate_nodes(intervals):
+    for interval in intervals:
         nodes = []
-        for start, end in configuration:
+        for start, end in interval:
             midpoint = (start + end)/2
             nodes.append(
                 np.random.uniform(start, end)
@@ -308,14 +309,10 @@ class Experiment:
         t = self
         l = self.l(v, self.C(v))
 
-        # State tracking for debugging
-        self.all.v.append(v)
-
         idx_range = range(t.m)
 
         C = t.C
         abs_Cz = np.abs(C(z))
-        self.all.Cv.append(C(v))
 
         current = None
 
@@ -323,11 +320,11 @@ class Experiment:
 
         # TODO: We use a tuple here to take advantage of the method's lru cache
         #       In practice this logic should be internal to the method
-        v0 = tuple(v)
+        #v0 = tuple(v)
 
         # For each interpolation node in v, group its index with a gap or an interval Ek
         # together with other indices corresponding to nodes in that gap or Ek
-        for indices in C.Ek_nodes(v0) + C.gap_nodes(v0):
+        for indices in C.group_nodes(v):
             if not indices:
                 continue
 
@@ -363,9 +360,6 @@ class Experiment:
             holds = np.logical_and(holds, current_sign == previous)
             previous = current_sign
 
-
-        # State tracking for debugging
-        self.all.products.append(products)
 
         # The sum of the products should be reasonably close to |C(z)|^2, otherwise
         # our results are not meaningful
@@ -440,13 +434,14 @@ class Experiment:
         plot_disks(ax, self.C)
         if v is not None:
             if (2 in v) or (-2 in v):
-                ax.set_xlim(-2, 2)
+                ax.set_xlim(-1, 1)
             else:
                 ax.set_xlim(self.C.E.min(), self.C.E.max())
         else:
             ax.set_xlim(self.C.E.min(), self.C.E.max())
         ax.set_ylim(-self.C.E_disk_radius, self.C.E_disk_radius)
         fig.colorbar(cmap)
+        ax.plot(C.gap_critical_values, np.zeros(len(C.gap_critical_values)), "*", color="pink", label="Maxima of $C_n$")
         ax.plot(self.C.polynomial.r, np.zeros(len(self.C.polynomial.r)), "*", label="Roots of $C_n$")
         for start, end in pairwise(sorted(self.C.polynomial.r)):
             midpoint = (start + end)/2
@@ -488,11 +483,12 @@ if __name__ == '__main__':
             m = n+j
             t = Experiment(C, m)
             roots = C.polynomial.r
-            negative, positive = signed_intervals(C.E, roots, m)
-            extra = [(roots[0], roots[0]), (roots[1], roots[1]), (roots[2], roots[2])]
+            #negative, positive = signed_intervals(C.E, roots, m)
+            #extra = [(-2, C.E.min()), (C.E.max(), 2)]
+            #combs = generate_nodes(negative + positive + extra)
 
             gap_points = list(np.array(C.gap_midpoints) + np.array(C.gap_radii)/2) + list(np.array(C.gap_midpoints) - np.array(C.gap_radii)/2)
-            combs = combinations(C.critical_points + C.gap_midpoints + gap_points + [-2, 2], m)
+            combs = combinations(C.critical_points + C.gap_critical_values + gap_points + [-2, 2], m)
             Path("Trials").mkdir(exist_ok=True)
             Path(f"Trials/{C.n}/").mkdir(exist_ok=True)
             Path(f"Trials/{C.n}/{C.id}").mkdir(exist_ok=True)
