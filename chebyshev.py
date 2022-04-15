@@ -223,25 +223,6 @@ class ChebyshevPolynomial:
         return d
 
 
-    @lru_cache(maxsize=128)
-    def gap_nodes(self, v):
-        d = []
-
-        aCv = abs(C(v))
-        v_negative = v[aCv < -1]
-        size_negative = len(v_negative)
-        v_positive = v[aCv > 1]
-        size_positive = len(v_positive)
-        maximum = max(size_negative, size_positive)
-        m = self.n + 1
-
-        correction_term = 0 if maximum == size_negative else 1
-        i = 0
-        while i < m:
-            pass
-
-        return d
-
 
     @staticmethod
     def is_within_Ek(x):
@@ -294,18 +275,27 @@ class ChebyshevPolynomial:
 
 
     def group_nodes(self, v):
-        previous = None
+
+        # L accumulates groups
         L = []
+        # Index corresponding to largest index in L
         l = 0
+        # Index corresponding to current node under consideration
         i = 0
+        # Lists keeping track of where we've most recently placed negative
+        # or positive nodes
         negative = []
         positive = []
         while i < len(v):
 
+            # The current node under consideration, and its sign
             current = v[i]
             sgn_current = np.sign(self(current))
 
             if not i:
+                # The base case -- if this is the first node under consideration,
+                # place it in its own group, and keep track of whether it was positive
+                # or negative in C_n
 
                 if sgn_current == 1:
                     positive.append(l)
@@ -318,24 +308,33 @@ class ChebyshevPolynomial:
                 continue
 
             if sgn_current == 1:
+                # If the current node is positive, then place it inside a group where the
+                # last node was negative in C_n if such a group is available
 
                 if negative:
 
                     idx = negative.pop(0)
                     L[idx].append(i)
+                    # Now that we've placed an element positive in C_n in the group,
+                    # we need to move the group index to the "positive" pile
                     positive.append(idx)
 
                 else:
+                    # If a group where the last node was negative in C_n is not available,
+                    # we create a new positive group containing the node
                     positive.append(l)
                     L.append([i])
                     l += 1
 
             elif sgn_current == -1:
+                # The logic here is effectively the same as the positive case above
+                # with the positive/negative roles reversed
 
                 if positive:
 
                     idx = positive.pop(0)
                     L[idx].append(i)
+
                     negative.append(idx)
 
                 else:
