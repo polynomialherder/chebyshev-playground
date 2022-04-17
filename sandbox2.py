@@ -1,3 +1,7 @@
+""" What follows is a mess. It's not worth trying to make sense of. At the present it's a tangled web of uncommented numerical spaghetti,
+    tight coupling, poor API design, god objects, and sprawling methods and functions. I'll clean it up eventually, promise :)
+"""
+
 import io
 import multiprocessing as mp
 import random
@@ -5,6 +9,7 @@ import sqlite3
 
 from dataclasses import dataclass, field
 from itertools import combinations, combinations_with_replacement, cycle, pairwise, product
+from os.path import join
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -207,6 +212,7 @@ class Experiment:
         CREATE TABLE IF NOT EXISTS trials(
           node_plot BLOB,
           cumulative_plot BLOB,
+          real_plot BLOB,
           polynomial_id TEXT,
           degree INTEGER,
           coefficients TEXT,
@@ -226,7 +232,7 @@ class Experiment:
         self.execute_sql(sql)
 
 
-    def trial_record(self, v, zv, holds, trial_number, bytes_current, bytes_cumulative):
+    def trial_record(self, v, zv, holds, trial_number, bytes_current, bytes_cumulative, bytes_real):
         CX = list(self.C(v))
         y, x = zv.shape
         resolution = x*y
@@ -266,6 +272,7 @@ class Experiment:
             "coefficients": str(coefficients),
             "node_plot": sqlite3.Binary(bytes_current.getbuffer()),
             "cumulative_plot": sqlite3.Binary(bytes_cumulative.getbuffer()),
+            "real_locations": sqlite3.Binary(bytes_real.getbuffer())
             **grouping_data
         }
 
@@ -295,7 +302,7 @@ class Experiment:
 
 
     def plot_bytes(self, all):
-        path = self.plot_path(all=all)
+        path = self.plot_lemma_path(all=all)
         with open(path, "rb") as f:
             return f.read()
 
@@ -511,16 +518,32 @@ class Experiment:
         return np.vectorize(check_points)(zv)
 
 
-    def plot_path(self, all=False):
+    def plot_lemma_path(self, all=False):
         grouped = "-ungrouped-" if not self.grouped else "-grouped-"
         all = "-single-" if not all else "-cumulative-"
-        path = f"Trials/{self.C.n}/{self.C.id}/lemma{grouped}{all}{self.m}-{self.trial_number}.png"
-        return path
+        slug = "lemma-{grouped}{all}{self.m}-{self.trial_number}"
+        return self.plot_path(slug)
+
+
+    def plot_real_locations_path(self):
+        slug = f"real-locations"
+        return self.plot_path(slug)
+
+
+    def plot_path(self, slug):
+        base_path = f"Trials/{self.C.n}/{self.C.id}/"
+        return join(base_path, f"{slug}.png")
 
 
     def plot_lemma_(self, xv, yv, zv, v=None, holds=None, uniquifier=""):
+
+        # Configure the axes separately so that we have enough room for
+        # the caption in the grouped case (TODO: Don't add the extra spacing if we aren't
+        # plotting the grouped case)
         fig = plt.figure()
         ax = fig.add_axes((.1, .20, 0.70, 0.70))
+
+        # Plot and recalculate the groupings (TODO: We should cache the last grouping and reuse that here)
         if holds is None:
             holds = self.check_points_vectorized(v, zv)
         if v is not None:
@@ -552,7 +575,7 @@ class Experiment:
         bytestream=io.BytesIO()
         fig.savefig(bytestream)
 
-        path = self.plot_path(v is None)
+        path = self.plot_lemma_path(v is None)
         with open(path, "wb") as f:
             f.write(bytestream.getbuffer())
             bytestream.seek(0)
@@ -563,16 +586,33 @@ class Experiment:
         spawn(self.plot_lemma_, xv, yv, zv, v=v, holds=holds, uniquifier=uniquifier)
 
 
+    def plot_real_points_(self, xv, yv, zv):
+        fig, ax = plt.subplots()
+        is_real = np.isclose(self.C(zv).imag, 0)
+        cmap = plt.contourf(xv, yv, is_real)
+        plot_disks(ax, self.C)
+        ax.set_xlim(self.C.E.min(), self.C.E.max())
+        ax.set_ylim(-self.C.E_disk_radius, self.C.E_disk_radius)
+        fig.colorbar(cmap)
+        path = self.plot_real_locations_path()
+        bytestream = io.BytesIO()
+        with open(path, "wb") as f:
+            f.write(bytestream.getbuffer())
+            bytestream.seek(0)
+        return bytestream
+
+
     def perform_trial_(self, xv, yv, zv, holds_current, holds_cumulative, v=None, trial_number=0):
         m = self.m
         grouped = "grouped" if self.grouped else "ungrouped"
         print(f"Plotting region where the lemma holds so far ({grouped}, {m=}, iteration #{trial_number})")
         bytes_current = self.plot_lemma_(xv, yv, zv, v=v, holds=holds_current)
         bytes_cumulative = self.plot_lemma_(xv, yv, zv, holds=holds_cumulative)
+        bytes_real = self.plot_real_points_(xv, yv, zv)
 
         if self.sqlite_db:
 
-            record = self.trial_record(v, zv, holds_grouped_current, trial_number, bytes_current, bytes_cumulative)
+            record = self.trial_record(v, zv, holds_grouped_current, trial_number, bytes_current, bytes_cumulative, bytes_real)
             self.insert_trials([record])
 
 
