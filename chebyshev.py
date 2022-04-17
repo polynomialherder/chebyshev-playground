@@ -283,7 +283,7 @@ class ChebyshevPolynomial:
         # Index corresponding to current node under consideration
         i = 0
         # Lists keeping track of where we've most recently placed negative
-        # or positive nodes
+        # or positive nodes (in C_n)
         negative = []
         positive = []
         while i < len(v):
