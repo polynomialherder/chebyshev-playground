@@ -1,5 +1,8 @@
 """ What follows is a mess. It's not worth trying to make sense of. At the present it's a tangled web of uncommented numerical spaghetti,
-    tight coupling, poor API design, god objects, and sprawling methods and functions. I'll clean it up eventually, promise :)
+    tight coupling, poor API design, inconsistent naming conventions, god objects, DRY violations, performance fences, and sprawling methods and functions.
+
+    Also there's a concurrency bug that introduces a race condition that only hasn't corrupted my SQLite db because of sheer luck.
+    Anyway caveat emptor, cave canem, use at your own risk. I'll clean it up eventually, promise :)
 """
 
 import io
@@ -167,6 +170,7 @@ class Experiment:
     trial_number: int = 0
     sqlite_db: str = "chebyshev.db"
     grouped: bool = True
+    cached_real_plot: io.BytesIO = None
 
 
     @property
@@ -272,7 +276,7 @@ class Experiment:
             "coefficients": str(coefficients),
             "node_plot": sqlite3.Binary(bytes_current.getbuffer()),
             "cumulative_plot": sqlite3.Binary(bytes_cumulative.getbuffer()),
-            "real_locations": sqlite3.Binary(bytes_real.getbuffer())
+            "real_locations": sqlite3.Binary(bytes_real.getbuffer()),
             **grouping_data
         }
 
@@ -282,12 +286,12 @@ class Experiment:
         sql = """INSERT INTO trials(
                        polynomial_id, degree, m, trial_number, resolution, holds_for, X,
                        CX, sgn_CX, coefficients, group_indices, group_nodes, C_group, sgn_C_group,
-                       node_plot, cumulative_plot
+                       node_plot, cumulative_plot, real_plot
                  )
                  VALUES(
                        :polynomial_id, :degree, :m, :trial_number, :resolution, :holds_for, :X,
                        :CX, :sgn_CX, :coefficients, :group_indices, :group_nodes, :C_group, :sgn_C_group,
-                       :node_plot, :cumulative_plot
+                       :node_plot, :cumulative_plot, :real_locations
                  )
         """
         with sqlite3.connect(self.sqlite_db) as conn:
@@ -586,19 +590,34 @@ class Experiment:
         spawn(self.plot_lemma_, xv, yv, zv, v=v, holds=holds, uniquifier=uniquifier)
 
 
-    def plot_real_points_(self, xv, yv, zv):
+    def plot_real_points_(self):
+        if self.cached_real_plot is not None:
+            return self.cached_real_plot
+
         fig, ax = plt.subplots()
-        is_real = np.isclose(self.C(zv).imag, 0)
+
+        X = np.linspace(C.E.min(), C.E.max(), 10000)
+        Y = np.linspace(-C.E_disk_radius, C.E_disk_radius, 10000)
+        xv, yv = np.meshgrid(X, Y)
+        zv = xv + yv*1j
+
+        is_real = np.isclose(abs(self.C(zv).imag), 0, atol=1e-2)
         cmap = plt.contourf(xv, yv, is_real)
+        ax.plot(self.C.gap_critical_values, np.zeros(len(self.C.gap_critical_values)), "*", color="pink", label="Maxima of $C_n$")
+        ax.plot(self.C.polynomial.r, np.zeros(len(self.C.polynomial.r)), "*", label="Roots of $C_n$")
+        fig.colorbar(cmap)
         plot_disks(ax, self.C)
         ax.set_xlim(self.C.E.min(), self.C.E.max())
         ax.set_ylim(-self.C.E_disk_radius, self.C.E_disk_radius)
-        fig.colorbar(cmap)
         path = self.plot_real_locations_path()
         bytestream = io.BytesIO()
-        with open(path, "wb") as f:
-            f.write(bytestream.getbuffer())
-            bytestream.seek(0)
+        fig.savefig(bytestream)
+        # Only write the plot to disk on the first iteration (TODO: Make this write-to-disk logic a method)
+        if not self.trial_number:
+            with open(path, "wb") as f:
+                f.write(bytestream.getbuffer())
+                bytestream.seek(0)
+        self.cached_real_plot = bytestream
         return bytestream
 
 
@@ -608,7 +627,7 @@ class Experiment:
         print(f"Plotting region where the lemma holds so far ({grouped}, {m=}, iteration #{trial_number})")
         bytes_current = self.plot_lemma_(xv, yv, zv, v=v, holds=holds_current)
         bytes_cumulative = self.plot_lemma_(xv, yv, zv, holds=holds_cumulative)
-        bytes_real = self.plot_real_points_(xv, yv, zv)
+        bytes_real = self.plot_real_points_()
 
         if self.sqlite_db:
 
@@ -623,7 +642,7 @@ class Experiment:
 
 if __name__ == '__main__':
     n = 3
-    X_ = np.linspace(-1, 1, 10000000)
+    X_ = np.linspace(-1, 1, 100000000)
 
     for _ in range(150):
 
