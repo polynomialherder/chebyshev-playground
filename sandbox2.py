@@ -44,24 +44,6 @@ def outside_gaps_inside_Edisk(C, zv):
     return outside_gap & outside_Ek & inside_E_disk
 
 
-def interpolation_points_to_string(C, v1):
-    v0 = []
-    for v in v1:
-        for i, point in enumerate(C.critical_points):
-            if point == v:
-                v0.append(f"CP{i}")
-        for i, point in enumerate(C.polynomial.r):
-            if point == v:
-                v0.append(f"R{i}")
-        for i, point in enumerate(C.gap_midpoints):
-            if point == v:
-                v0.append(f"G{i}")
-        for i, point in enumerate(C.Ek_midpoints):
-            if point == v:
-                v0.append(f"Ek{i}")
-    return v0
-
-
 def plot_disks(axis, C):
     for idx, disk_info in enumerate(zip(C.Ek_midpoints, C.Ek_radii)):
         midpoint, radius = disk_info
@@ -139,32 +121,12 @@ def spawn(func, *args, **kwargs):
     proc.join()
 
 
-@dataclass
-class Store:
-    v: list = field(default_factory=list)
-    Cv: list = field(default_factory=list)
-    angles: list = field(default_factory=list)
-    factors1c: list = field(default_factory=list)
-    factors1: list = field(default_factory=list)
-    factors2: list = field(default_factory=list)
-    factors3: list = field(default_factory=list)
-    products: list = field(default_factory=list)
-    cos: list = field(default_factory=list)
-    lemmas: list = field(default_factory=list)
-
-    @property
-    def n(self):
-        return len(self.v)
-
 
 @dataclass
 class Experiment:
 
     C: ChebyshevPolynomial
     m_: int = None
-    winning: Store = Store()
-    losing: Store = Store()
-    all: Store = Store()
     success: int = 0
     discarded: int = 0
     trial_number: int = 0
@@ -202,14 +164,6 @@ class Experiment:
             spawn(plot_angles, C, z, store, i, title)
             if i > n:
                 break
-
-    def plot_winning(self, n=100):
-        self.plot(self.winning, "Winning", n)
-
-    def plot_losing(self, n=100):
-        self.plot(self.losing, "Losing", n)
-
-
 
     def create_db(self):
         sql = """
@@ -319,13 +273,6 @@ class Experiment:
         l = self.l(v, C(v))
 
         products = []
-        lemmas = []
-        factors1c = []
-        factors1 = []
-        factors2 = []
-        factors3 = []
-        angles = []
-        cosines = []
         for i, j in self.index_product:
 
             ci = l.denominator(i)
@@ -348,15 +295,6 @@ class Experiment:
             products.append(
                 Cxi*Cxj*num*(lemma)*1/(ci*cj)
             )
-            lemmas.append(lemma)
-            factors1c.append(z - xj)
-            factors1.append(factor1)
-            factors2.append(factor2)
-            factors3.append(factor3)
-            angles.append(
-                theta
-            )
-            cosines.append(cos)
 
         products = np.array(products)
 
@@ -368,33 +306,6 @@ class Experiment:
             print(f"Discarding results for {v} since they are unreliable")
             self.discarded += 1
             return False
-
-        if satisfies:
-
-            self.success += 1
-            self.winning.v.append(v)
-            self.winning.products.append(np.array(products))
-            self.winning.Cv.append(C(v))
-            self.winning.angles.append(angles)
-            self.winning.factors1c.append(np.array(factors1c))
-            self.winning.factors1.append(np.array(factors1))
-            self.winning.factors2.append(np.array(factors2))
-            self.winning.cos.append(np.array(cosines))
-            self.winning.factors3.append(np.array(factors3))
-            self.winning.lemmas.append(np.array(lemmas))
-
-
-        else:
-            self.losing.v.append(v)
-            self.losing.products.append(np.array(products))
-            self.losing.Cv.append(C(v))
-            self.losing.angles.append(np.array(angles))
-            self.losing.factors1c.append(np.array(factors1c))
-            self.losing.factors1.append(np.array(factors1))
-            self.losing.factors2.append(np.array(factors2))
-            self.losing.factors3.append(np.array(factors3))
-            self.losing.cos.append(np.array(cosines))
-            self.losing.lemmas.append(np.array(lemmas))
 
         return satisfies
 
@@ -472,7 +383,6 @@ class Experiment:
 
         t = self
         l = self.l(v, self.C(v))
-        self.all.v.append(v)
 
         def check_points(z):
 
@@ -639,57 +549,38 @@ class Experiment:
         spawn(self.perform_trial_, xv, yv, zv, holds_current, holds_cumulative, v=v, trial_number=trial_number)
 
 
-
 if __name__ == '__main__':
-    n = 3
     X_ = np.linspace(-1, 1, 100000000)
+    for n in range(4, 7):
+        for _ in range(150):
 
-    for _ in range(150):
+            print(f"Generating a Chebyshev polynomial and set E on [-1, 1]")
+            C = ChebyshevPolynomial(n, X_)
+            E_interval = (C.E.min(), C.E.max())
+            print(f"Generated the Chebyshev polynomial {C.id}")
+            trials = 1000
+            print(f"Beginning {trials} trials")
+            X = np.linspace(-1, 1, 1000)
+            Y = np.linspace(-1, 1, 1000)
+            xv,  yv = np.meshgrid(X,  Y)
+            zv = xv + 1j*yv
+            for j in range(1, 2*n):
+                m = n+j
+                t = Experiment(C, m, grouped=True)
+                t.create_db()
+                roots = C.polynomial.r
+                gap_points = list(np.array(C.gap_midpoints) + np.array(C.gap_radii)/2) + list(np.array(C.gap_midpoints) - np.array(C.gap_radii)/2)
+                combs = combinations(C.critical_points, m)
+                Path("Trials").mkdir(exist_ok=True)
+                Path(f"Trials/{C.n}/").mkdir(exist_ok=True)
+                Path(f"Trials/{C.n}/{C.id}").mkdir(exist_ok=True)
+                holds_grouped_cumulative = np.zeros(zv.shape)
+                holds_cumulative = np.zeros(zv.shape)
+                for i, v in enumerate(combs):
+                    v = np.sort(v)
+                    holds_grouped_current = t.check_points_grouped(v, zv)
+                    holds_grouped_cumulative = np.logical_or(holds_grouped_cumulative, holds_grouped_current)
 
-        X = np.linspace(-1, 1, 10000)
-        Y = np.linspace(-1, 1, 10000)
-        xv,  yv = np.meshgrid(X,  Y)
-        zv = xv + 1j*yv
+                    t.perform_trial(xv, yv, zv, holds_grouped_current, holds_grouped_cumulative, v=v, trial_number=t.trial_number)
 
-        print(f"Generating a Chebyshev polynomial and set E on [-1, 1]")
-        C = ChebyshevPolynomial(n, X_)
-        E_interval = (C.E.min(), C.E.max())
-        print(f"Generated the Chebyshev polynomial {C.id}")
-
-        trials = 1000
-        print(f"Beginning {trials} trials")
-        X = np.linspace(-1, 1, 1000)
-        Y = np.linspace(-1, 1, 1000)
-        xv,  yv = np.meshgrid(X,  Y)
-        zv = xv + 1j*yv
-
-        for j in range(1, 2*n):
-            m = n+j
-            t = Experiment(C, m, grouped=True)
-            #t2 = Experiment(C, m, grouped=False)
-            t.create_db()
-            roots = C.polynomial.r
-
-            gap_points = list(np.array(C.gap_midpoints) + np.array(C.gap_radii)/2) + list(np.array(C.gap_midpoints) - np.array(C.gap_radii)/2)
-            combs = combinations(C.critical_points, m)
-            Path("Trials").mkdir(exist_ok=True)
-            Path(f"Trials/{C.n}/").mkdir(exist_ok=True)
-            Path(f"Trials/{C.n}/{C.id}").mkdir(exist_ok=True)
-            holds_grouped_cumulative = np.zeros(zv.shape)
-            holds_cumulative = np.zeros(zv.shape)
-            for i, v in enumerate(combs):
-                v = np.sort(v)
-                holds_grouped_current = t.check_points_grouped(v, zv)
-                holds_grouped_cumulative = np.logical_or(holds_grouped_cumulative, holds_grouped_current)
-
-                t.perform_trial(xv, yv, zv, holds_grouped_current, holds_grouped_cumulative, v=v, trial_number=t.trial_number)
-
-                t.trial_number += 1
-
-                #holds_current = t.check_points_vectorized(v, zv)
-                #holds_cumulative = np.logical_or(holds_cumulative, holds_current)
-
-                # t2.perform_trial(xv, yv, zv, holds_current, holds_cumulative, v=v, trial_number=t2.trial_number)
-
-                # t2.trial_number += 1
-
+                    t.trial_number += 1

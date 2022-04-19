@@ -135,19 +135,19 @@ class ChebyshevPolynomial:
         return sorted(np.concatenate((self.minimum_points, self.maximum_points)))
 
 
-    @property
+    @cached_property
     def left(self):
         lower_bound = min(self.critical_points)
         return self.X[self.X < lower_bound]
 
 
-    @property
+    @cached_property
     def right(self):
         upper_bound = max(self.critical_points)
         return self.X[upper_bound < self.X]
 
 
-    @property
+    @cached_property
     def calculate_intervals(self):
         critical_point_pairs = pairwise(self.critical_points)
         Ek, gaps = [], []
@@ -162,12 +162,12 @@ class ChebyshevPolynomial:
         return Ek, gaps
 
 
-    @property
+    @cached_property
     def E(self):
         return np.concatenate(self.Ek)
 
 
-    @property
+    @cached_property
     def Ek(self):
         Ek, _ = self.calculate_intervals
         return Ek
@@ -183,33 +183,32 @@ class ChebyshevPolynomial:
         return intervals
 
 
-    @property
+    @cached_property
     def E_intervals(self):
         return self.intervals(self.Ek)
 
 
-    @property
+    @cached_property
     def E_midpoint(self):
         return (self.E.min() + self.E.max())/2
 
 
-    @property
+    @cached_property
     def E_disk_radius(self):
         return self.E.max() - self.E_midpoint
 
 
-    @property
+    @cached_property
     def gap_intervals(self):
         return self.intervals(self.gaps)
 
 
-    @property
+    @cached_property
     def gaps(self):
         _, gaps = self.calculate_intervals
         return gaps
 
 
-    @lru_cache
     def Ek_nodes(self, v):
         d = []
         for idx, start_end in enumerate(self.E_intervals):
@@ -229,7 +228,7 @@ class ChebyshevPolynomial:
         return abs(x) < 1 or np.isclose(x, 1)
 
 
-    @property
+    @cached_property
     def Ek_radii(self):
         radii = []
         for left, right in self.E_intervals:
@@ -239,7 +238,7 @@ class ChebyshevPolynomial:
         return radii
 
 
-    @property
+    @cached_property
     def Ek_midpoints(self):
         midpoints = []
         for left, right in self.E_intervals:
@@ -249,7 +248,7 @@ class ChebyshevPolynomial:
         return midpoints
 
 
-    @property
+    @cached_property
     def gap_radii(self):
         radii = []
         for left, right in self.gap_intervals:
@@ -259,7 +258,7 @@ class ChebyshevPolynomial:
         return radii
 
 
-    @property
+    @cached_property
     def gap_midpoints(self):
         midpoints = []
         for left, right in self.gap_intervals:
@@ -269,7 +268,7 @@ class ChebyshevPolynomial:
         return midpoints
 
 
-    @property
+    @cached_property
     def gap_critical_values(self):
         return list(sorted(self.polynomial.deriv().r))
 
