@@ -551,8 +551,8 @@ class Experiment:
 
 if __name__ == '__main__':
     X_ = np.linspace(-1, 1, 100000000)
-    for n in range(4, 7):
-        for _ in range(150):
+    for n in [2, 5, 6]:
+        for _ in range(20):
 
             print(f"Generating a Chebyshev polynomial and set E on [-1, 1]")
             C = ChebyshevPolynomial(n, X_)

@@ -1,4 +1,5 @@
 import hashlib
+import numbers
 import random
 import time
 import warnings
@@ -51,17 +52,23 @@ class ChebyshevPolynomial:
     """ Generates a random degree n Chebyshev polynomial and domain E given a discretized space X
     """
 
-    def __init__(self, n, X, seed=1, nodes=None, known_values=None, absolute=False):
+    def __init__(self, n=None, X=None, polynomial=None, seed=1, nodes=None, known_values=None, absolute=False):
+        if X is None:
+            raise Exception("A discretized domain X must be provided")
+        if n is None and polynomial is None:
+            raise Exception("One of n or polynomial must be provided")
         self.n = n
         self.X = X
         self.seed = seed
         self.domain_size = X.size
         self.absolute = absolute
+        self._polynomial = polynomial
         # Figure and axis properties for plotting
         self.fig = None
         self.ax = None
         self._nodes = nodes
         self._known_values = known_values
+        self.parent = None
 
 
     def normalize_polynomial(self, poly):
@@ -77,7 +84,18 @@ class ChebyshevPolynomial:
 
     @cached_property
     def polynomial(self):
-        return lagrange(self.nodes, self.known_values)
+        if self._polynomial:
+            poly = self._polynomial
+        else:
+            poly = lagrange(self.nodes, self.known_values)
+
+        return poly
+
+    @cached_property
+    def derivative(self):
+        c = ChebyshevPolynomial(X=self.X, polynomial=self.polynomial.deriv())
+        c.parent = self
+        return c
 
 
     @cached_property
@@ -177,6 +195,8 @@ class ChebyshevPolynomial:
     def intervals(sets):
         intervals = []
         for set_ in sets:
+            if not set_.size:
+                continue
             intervals.append(
                 (min(set_), max(set_))
             )
@@ -355,7 +375,10 @@ class ChebyshevPolynomial:
     def initialize_plot(self, size=(25, 15)):
         if self.fig:
             self.clear_plot()
-        self.fig, self.ax = plt.subplots(figsize=size)
+        if self.parent:
+            self.fig, self.ax = self.parent.fig, self.parent.ax
+        else:
+            self.fig, self.ax = plt.subplots(figsize=size)
 
 
     def clear_plot(self):
@@ -395,19 +418,26 @@ class ChebyshevPolynomial:
         return np.array(self.critical_points)[indices]
 
 
+    @property
+    def plot_color(self):
+        return "indigo" if not self.parent else "salmon"
+
+
     def plot_gaps(self):
         for idx, gap in enumerate(self.gaps):
             y = self(gap)
-            self.ax.plot(gap, y, "--", color="indigo", label=None)
+            self.ax.plot(gap, y, "--", color=self.plot_color, label=None)
 
 
     def plot_Ek(self):
+        hline = 0 if self.parent is None else 0.05
+        p = "" if not self.parent else "'"
         for idx, E in enumerate(self.Ek):
-            curve_label = self.label(idx, f"$C_n :$ {self.p._repr_latex_()}")
-            domain_label = self.label(idx, "$E_k$")
+            curve_label = self.label(idx, f"$C_n{p} :$ {self.p._repr_latex_()}")
+            domain_label = self.label(idx, f"$E_k{p}$")
             y =  self(E)
-            self.ax.plot(E, y, "-r", label=curve_label, color="indigo")
-            self.ax.hlines(0, E.min(), E.max(), label=domain_label, colors="indigo", linewidth=10)
+            self.ax.plot(E, y, "-r", label=curve_label, color=self.plot_color)
+            self.ax.hlines(hline, E.min(), E.max(), label=domain_label, colors=self.plot_color, linewidth=10)
 
 
     def plot_comparison_polynomials(self, comparison_polynomials=None):
@@ -424,14 +454,16 @@ class ChebyshevPolynomial:
     def plot_left_and_right(self):
         left_y = self(self.left)
         right_y = self(self.right)
-        self.ax.plot(self.left, left_y, "--", label=None, color="indigo")
-        self.ax.plot(self.right, right_y, "--", label=None, color="indigo")
+        self.ax.plot(self.left, left_y, "--", label=None, color=self.plot_color)
+        self.ax.plot(self.right, right_y, "--", label=None, color=self.plot_color)
 
 
     def plot_extrema(self):
-        self.ax.plot(self.maximum_points, self.maxima, "o", color="red")
+        real_maxima = self.maximum_points[np.isclose(abs(self(self.maximum_points.real)), 1)]
+        real_minima = self.minimum_points[np.isclose(abs(self(self.minimum_points.real)), 1)]
+        self.ax.plot(real_maxima, self(real_maxima), "o", color="red")
         minima = self.handle_absolute(self.minima)
-        self.ax.plot(self.minimum_points, minima, "o", color="red")
+        self.ax.plot(real_minima, self(real_minima), "o", color="red")
 
 
     def plot_guidelines(self):
@@ -444,14 +476,71 @@ class ChebyshevPolynomial:
         self.ax.plot(self.X, T(self.n, self.X), "-", label='$T_n$')
 
 
+    def plot_critical_values(self):
+        self.ax.plot(
+            self.gap_critical_values,
+            np.zeros(len(self.gap_critical_values)), "*",
+            color="pink", label="Maxima of $C_n$"
+        )
+
+
+    def plot_roots(self):
+        self.ax.plot(
+            self.polynomial.r, np.zeros(len(self.polynomial.r)),
+            "*", label="Roots of $C_n$"
+        )
+
+
+    @property
+    def gap_disk_color(self):
+        return "salmon" if not self.parent else "violet"
+
+    @property
+    def Ek_disk_color(self):
+        return "green" if not self.parent else "darkseagreen"
+
+
+    def plot_disks(self):
+        for idx, disk_info in enumerate(zip(self.Ek_midpoints, self.Ek_radii)):
+            midpoint, radius = disk_info
+            disk = plt.Circle((midpoint, 0), radius, fill=False, color=self.Ek_disk_color, linestyle="--")
+            self.ax.add_patch(disk)
+        for idx, disk_info in enumerate(zip(self.gap_midpoints, self.gap_radii)):
+            midpoint, radius = disk_info
+            disk = plt.Circle((midpoint, 0), radius, fill=False, color=self.gap_disk_color, linestyle="--")
+            self.ax.add_patch(disk)
+
+        E_disk = plt.Circle((self.E_midpoint, 0), self.E_disk_radius, fill=False, linestyle="-")
+        self.ax.add_patch(E_disk)
+
+
+    def plot_features(self, derivative=False):
+        self.initialize_plot()
+        if derivative:
+            self.derivative.plot_features(derivative=False)
+        self.plot_critical_values()
+        self.plot_roots()
+        self.plot_disks()
+        self.fig.show()
+
+
+
     def configure_legend(self):
         self.ax.legend(bbox_to_anchor=(1.04,1), loc="upper left")
         self.fig.subplots_adjust(right=0.6)
 
 
-    def configure_plot(self):
+    def configure_plot(self, derivative=False):
         self.ax.grid()
-        self.ax.set_xlim(self.E.min(), self.E.max())
+        Emin = self.E.min()
+        Emax = self.E.max()
+        if derivative:
+            xlim_left = min(Emin, self.derivative.E.min())
+            xlim_right = max(Emax, self.derivative.E.max())
+        else:
+            xlim_left = Emin
+            xlim_right = Emax
+        self.ax.set_xlim(xlim_left, xlim_right)
         if not self.absolute:
             self.ax.set_ylim(-2, 2)
         else:
@@ -466,7 +555,9 @@ class ChebyshevPolynomial:
         self.fig.show()
 
 
-    def generate_plots(self, comparison_polynomials=None, show=True, save_to=None, compare=False):
+    def generate_plots(self, comparison_polynomials=None, show=True,
+                       save_to=None, compare=False, derivative=False
+        ):
         self.initialize_plot()
         self.plot_Ek()
         self.plot_gaps()
@@ -474,11 +565,17 @@ class ChebyshevPolynomial:
             self.plot_comparison_polynomials(
                 comparison_polynomials
             )
+        if derivative:
+            d = self.derivative
+            d.initialize_plot()
+            d.plot_Ek()
+            d.plot_gaps()
+            d.plot_left_and_right()
         self.plot_left_and_right()
         self.plot_extrema()
         self.plot_guidelines()
         self.configure_legend()
-        self.configure_plot()
+        self.configure_plot(derivative=derivative)
         if show:
             self.show_plot()
         if save_to:
@@ -502,6 +599,61 @@ class Poly(Polynomial):
     @staticmethod
     def _repr_latex_scalar(x):
         return r'\text{{{}}}'.format(round(x, 3))
+
+
+    def _repr_latex_(self):
+        # get the scaled argument string to the basis functions
+        off, scale = self.mapparms()
+        if off == 0 and scale == 1:
+            term = 'x'
+            needs_parens = False
+        elif scale == 1:
+            term = f"{self._repr_latex_scalar(off)} + x"
+            needs_parens = True
+        elif off == 0:
+            term = f"{self._repr_latex_scalar(scale)}x"
+            needs_parens = True
+        else:
+            term = (
+                f"{self._repr_latex_scalar(off)} + "
+                f"{self._repr_latex_scalar(scale)}x"
+            )
+            needs_parens = True
+
+        mute = r"".format
+
+        parts = []
+        for i, c in enumerate(self.coef):
+            # prevent duplication of + and - signs
+            if i == 0:
+                coef_str = f"{self._repr_latex_scalar(c)}"
+            elif not isinstance(c, numbers.Real):
+                coef_str = f" + ({self._repr_latex_scalar(c)})"
+            elif not np.signbit(c):
+                coef_str = f" + {self._repr_latex_scalar(c)}"
+            else:
+                coef_str = f" - {self._repr_latex_scalar(-c)}"
+
+            # produce the string for the term
+            term_str = self._repr_latex_term(i, term, needs_parens)
+            if term_str == '1':
+                part = coef_str
+            else:
+                part = rf"{coef_str}\,{term_str}"
+
+            if c == 0:
+                part = mute(part)
+
+            parts.append(part)
+
+        if parts:
+            body = ''.join(parts)
+        else:
+            # in case somehow there are no coefficients at all
+            body = '0'
+
+        return rf"$x \mapsto {body}$"
+
 
 
     def _generate_string(self, term_method):
