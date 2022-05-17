@@ -1,17 +1,19 @@
 """ What follows is a mess. It's not worth trying to make sense of. At the present it's a tangled web of uncommented numerical spaghetti,
     tight coupling, poor API design, inconsistent naming conventions, god objects, DRY violations, performance fences, and sprawling methods and functions.
 
-    Also there's a concurrency bug that introduces a race condition that only hasn't corrupted my SQLite db because of sheer luck.
+    Also there's a concurrency bug that introduces a race condition that hasn't corrupted my SQLite db purely because of sheer luck.
     Anyway caveat emptor, cave canem, use at your own risk. I'll clean it up eventually, promise :)
 """
 
 import io
+import math
 import multiprocessing as mp
 import random
 import sqlite3
 
 from dataclasses import dataclass, field
-from itertools import combinations, combinations_with_replacement, cycle, pairwise, product
+from iter_utils import pairwise
+from itertools import combinations, combinations_with_replacement, cycle, product
 from os.path import join
 from pathlib import Path
 
@@ -331,13 +333,9 @@ class Experiment:
 
         Gk = []
 
-        # TODO: We use a tuple here to take advantage of the method's lru cache
-        #       In practice this logic should be internal to the method
-        #v0 = tuple(v)
-
         # For each interpolation node in v, group its index with a gap or an interval Ek
         # together with other indices corresponding to nodes in that gap or Ek
-        grouped = C.group_nodes(v)
+        grouped = C.group_nodes_Ek(v) #group_nodes(v)
         if len(grouped) == 1:
             return np.zeros(z.shape)
 
@@ -435,7 +433,7 @@ class Experiment:
     def plot_lemma_path(self, all=False):
         grouped = "-ungrouped-" if not self.grouped else "-grouped-"
         all = "-single-" if not all else "-cumulative-"
-        slug = "lemma-{grouped}{all}{self.m}-{self.trial_number}"
+        slug = f"lemma-{grouped}{all}{self.m}-{self.trial_number}"
         return self.plot_path(slug)
 
 
@@ -449,7 +447,7 @@ class Experiment:
         return join(base_path, f"{slug}.png")
 
 
-    def plot_lemma_(self, xv, yv, zv, v=None, holds=None, uniquifier=""):
+    def plot_lemma_(self, xv, yv, zv, v=None, holds=None, uniquifier="", show=False):
 
         # Configure the axes separately so that we have enough room for
         # the caption in the grouped case (TODO: Don't add the extra spacing if we aren't
@@ -485,7 +483,9 @@ class Experiment:
                 group_text += "$I_" f"{i}" + "$" + f" = {group}" + "$; X_" + f"{i}" +  "=$" + f"{np.round(x, 3)}"+"; $C_n(X_" + f"{i})" +" =$" + f"{np.round(self.C(x), 3)}" + "\n"
             fig.text(0.1, 0.0, group_text, fontsize=10)
 
-
+        if show:
+            fig.show()
+            return
         bytestream=io.BytesIO()
         fig.savefig(bytestream)
 
@@ -496,8 +496,8 @@ class Experiment:
         return bytestream
 
 
-    def plot_lemma(self, xv, yv, zv, v=None, holds=None, uniquifier=""):
-        spawn(self.plot_lemma_, xv, yv, zv, v=v, holds=holds, uniquifier=uniquifier)
+    def plot_lemma(self, xv, yv, zv, v=None, holds=None, uniquifier="", show=False):
+        spawn(self.plot_lemma_, xv, yv, zv, v=v, holds=holds, uniquifier=uniquifier, show=show)
 
 
     def plot_real_points_(self):
@@ -570,7 +570,7 @@ if __name__ == '__main__':
                 t.create_db()
                 roots = C.polynomial.r
                 gap_points = list(np.array(C.gap_midpoints) + np.array(C.gap_radii)/2) + list(np.array(C.gap_midpoints) - np.array(C.gap_radii)/2)
-                combs = combinations(C.critical_points, m)
+                combs = combinations(sorted(C.critical_points + gap_points), m)
                 Path("Trials").mkdir(exist_ok=True)
                 Path(f"Trials/{C.n}/").mkdir(exist_ok=True)
                 Path(f"Trials/{C.n}/{C.id}").mkdir(exist_ok=True)

@@ -1,10 +1,12 @@
 import hashlib
+import math
 import numbers
 import random
 import time
 import warnings
 
-from itertools import permutations, pairwise
+from iter_utils import pairwise
+from itertools import permutations
 from functools import partial, cached_property, lru_cache
 from random import uniform
 
@@ -57,7 +59,7 @@ class ChebyshevPolynomial:
             raise Exception("A discretized domain X must be provided")
         if n is None and polynomial is None:
             raise Exception("One of n or polynomial must be provided")
-        self.n = n
+        self.n = n or polynomial.order
         self.X = X
         self.seed = seed
         self.domain_size = X.size
@@ -245,7 +247,7 @@ class ChebyshevPolynomial:
 
     @staticmethod
     def is_within_Ek(x):
-        return abs(x) < 1 or np.isclose(x, 1)
+        return abs(x) < 1
 
 
     @cached_property
@@ -294,7 +296,29 @@ class ChebyshevPolynomial:
 
 
     def group_nodes(self, v):
+        v = np.array(v)
+        in_Ek = self.is_within_Ek(v)
+        v_in_Ek = v[in_Ek]
+        v_in_gap = v[~in_Ek]
+        Ek_grouping = self.group_nodes_Ek(v_in_Ek)
+        gap_grouping = self.group_nodes_alternating(v_in_gap)
+        return [*Ek_grouping, *gap_grouping]
 
+
+    def group_nodes_Ek(self, v):
+        intervals = self.E_intervals
+        groupings = []
+        for left, right in intervals:
+            interval_points = []
+            for i, point in enumerate(v):
+                if np.isclose(point, left, atol=1e-7) or np.isclose(point, right, atol=1e-7):
+                    interval_points.append(i)
+            if interval_points:
+                groupings.append(interval_points)
+        return groupings
+
+
+    def group_nodes_alternating(self, v):
         # L accumulates groups
         L = []
         # Index corresponding to largest index in L
@@ -423,21 +447,23 @@ class ChebyshevPolynomial:
         return "indigo" if not self.parent else "salmon"
 
 
-    def plot_gaps(self):
+    def plot_gaps(self, ax=None):
+        ax = self.ax if self.ax else ax
         for idx, gap in enumerate(self.gaps):
             y = self(gap)
-            self.ax.plot(gap, y, "--", color=self.plot_color, label=None)
+            ax.plot(gap, y, "--", color=self.plot_color, label=None)
 
 
-    def plot_Ek(self):
+    def plot_Ek(self, ax=None):
+        ax = self.ax if self.ax else ax
         hline = 0 if self.parent is None else 0.05
         p = "" if not self.parent else "'"
         for idx, E in enumerate(self.Ek):
             curve_label = self.label(idx, f"$C_n{p} :$ {self.p._repr_latex_()}")
             domain_label = self.label(idx, f"$E_k{p}$")
             y =  self(E)
-            self.ax.plot(E, y, "-r", label=curve_label, color=self.plot_color)
-            self.ax.hlines(hline, E.min(), E.max(), label=domain_label, colors=self.plot_color, linewidth=10)
+            ax.plot(E, y, "-r", label=curve_label, color=self.plot_color)
+            ax.hlines(hline, E.min(), E.max(), label=domain_label, colors=self.plot_color, linewidth=10)
 
 
     def plot_comparison_polynomials(self, comparison_polynomials=None):
@@ -451,19 +477,28 @@ class ChebyshevPolynomial:
                 self.ax.plot(self.X, y, "-", label="$"+f"p_{idx}"+"$")
 
 
-    def plot_left_and_right(self):
+    def plot_left_and_right(self, ax=None):
+        ax = self.ax if self.ax else ax
         left_y = self(self.left)
         right_y = self(self.right)
-        self.ax.plot(self.left, left_y, "--", label=None, color=self.plot_color)
-        self.ax.plot(self.right, right_y, "--", label=None, color=self.plot_color)
+        ax.plot(self.left, left_y, "--", label=None, color=self.plot_color)
+        ax.plot(self.right, right_y, "--", label=None, color=self.plot_color)
 
 
-    def plot_extrema(self):
+    def plot_Cn(self, ax=None):
+        ax = self.ax if self.ax else ax
+        self.plot_left_and_right(ax=ax)
+        self.plot_Ek(ax=ax)
+        self.plot_gaps(ax=ax)
+
+
+    def plot_extrema(self, ax=None):
+        ax = ax if ax else self.ax
         real_maxima = self.maximum_points[np.isclose(abs(self(self.maximum_points.real)), 1)]
         real_minima = self.minimum_points[np.isclose(abs(self(self.minimum_points.real)), 1)]
-        self.ax.plot(real_maxima, self(real_maxima), "o", color="red")
+        ax.plot(real_maxima, self(real_maxima), "o", color="red")
         minima = self.handle_absolute(self.minima)
-        self.ax.plot(real_minima, self(real_minima), "o", color="red")
+        ax.plot(real_minima, self(real_minima), "o", color="red")
 
 
     def plot_guidelines(self):
@@ -476,16 +511,18 @@ class ChebyshevPolynomial:
         self.ax.plot(self.X, T(self.n, self.X), "-", label='$T_n$')
 
 
-    def plot_critical_values(self):
-        self.ax.plot(
+    def plot_critical_values(self, ax=None):
+        ax = ax if ax else self.ax
+        ax.plot(
             self.gap_critical_values,
             np.zeros(len(self.gap_critical_values)), "*",
             color="pink", label="Maxima of $C_n$"
         )
 
 
-    def plot_roots(self):
-        self.ax.plot(
+    def plot_roots(self, ax=None):
+        ax = ax if ax else self.ax
+        ax.plot(
             self.polynomial.r, np.zeros(len(self.polynomial.r)),
             "*", label="Roots of $C_n$"
         )
@@ -500,21 +537,22 @@ class ChebyshevPolynomial:
         return "green" if not self.parent else "darkseagreen"
 
 
-    def plot_disks(self):
+    def plot_disks(self, ax=None):
+        ax = ax if ax else self.ax
         for idx, disk_info in enumerate(zip(self.Ek_midpoints, self.Ek_radii)):
             midpoint, radius = disk_info
             disk = plt.Circle((midpoint, 0), radius, fill=False, color=self.Ek_disk_color, linestyle="--")
-            self.ax.add_patch(disk)
+            ax.add_patch(disk)
         for idx, disk_info in enumerate(zip(self.gap_midpoints, self.gap_radii)):
             midpoint, radius = disk_info
             disk = plt.Circle((midpoint, 0), radius, fill=False, color=self.gap_disk_color, linestyle="--")
-            self.ax.add_patch(disk)
+            ax.add_patch(disk)
 
         E_disk = plt.Circle((self.E_midpoint, 0), self.E_disk_radius, fill=False, linestyle="-")
-        self.ax.add_patch(E_disk)
+        ax.add_patch(E_disk)
 
 
-    def plot_features(self, derivative=False):
+    def generate_diskplot(self, derivative=False):
         self.initialize_plot()
         if derivative:
             self.derivative.plot_features(derivative=False)
@@ -522,7 +560,6 @@ class ChebyshevPolynomial:
         self.plot_roots()
         self.plot_disks()
         self.fig.show()
-
 
 
     def configure_legend(self):

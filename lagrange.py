@@ -1,6 +1,7 @@
 import numpy as np
 
 from functools import cache, cached_property
+from scipy.interpolate import lagrange
 
 class LagrangePolynomial:
 
@@ -11,6 +12,12 @@ class LagrangePolynomial:
     @cached_property
     def indices(self):
         return np.arange(len(self.nodes))
+
+
+    @cached_property
+    def polynomial(self):
+        applied = [self.L(node) for node in self.nodes]
+        return lagrange(self.nodes, applied)
 
 
     def numerator_piecemeal(self, i, z):
@@ -32,6 +39,18 @@ class LagrangePolynomial:
 
     def l_piecemeal(self, i, z):
         return self.numerator_piecemeal(i, z) / self.denominator_piecemeal(i)
+
+
+    def l_fast(self, i, z):
+        numerator = 1
+        denominator = 1
+        xi = self.nodes[i]
+        for idx in self.indices:
+            if idx == i:
+                continue
+            numerator *= (z - self.nodes[idx])
+            denominator *= (xi - z)
+        return numerator/denominator
 
 
     def L_piecemeal(self, z):
@@ -60,6 +79,7 @@ class LagrangePolynomial:
         return z - self.nodes[self.indices != i]
 
 
+    @cache
     def denominator(self, i):
         xi = self.nodes[i]
         return np.prod(xi - self.nodes, where=self.indices != i)
@@ -78,6 +98,11 @@ class LagrangePolynomial:
         return self.numerator(i, z)/self.denominator(i)
 
 
+    def lp(self, i):
+        values = self.l_piecemeal(i, self.nodes)
+        return lagrange(self.nodes, values)
+
+
     def lv(self, z):
         num = np.array(self.numerators(z))
         return num/np.array(self.denominators)
@@ -85,6 +110,16 @@ class LagrangePolynomial:
 
     def L(self, z):
         return self.L_seq(z).sum()
+
+
+    def group(self, grouping, zv):
+        groupings = []
+        for index_set in grouping:
+            grouping = []
+            for i in index_set:
+                groupings.append(
+                    self.values[i]*self.l
+                )
 
 
     def L_seq(self, z):
