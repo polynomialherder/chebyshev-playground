@@ -54,10 +54,10 @@ class LagrangePolynomial:
 
 
     def L_piecemeal(self, z):
-        sum_ = 0
+        vals = []
         for i, x in enumerate(self.nodes):
-            sum_ += self.values[i]*self.l_piecemeal(i, z)
-        return sum_
+            vals.append(self.values[i]*self.l_piecemeal(i, z))
+        return vals
 
 
     def numerator(self, i, z, j=None):

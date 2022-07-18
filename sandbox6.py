@@ -83,7 +83,7 @@ def check_points(C, v, zv):
         return sum_.astype(bool)
     for term in L:
         sum_ += np.sign(term)
-    return np.isclose(abs(sum_), m)
+    return np.isclose(abs(sum_), m), L
 
 
 def circle_points(r, q, N=100):

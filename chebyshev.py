@@ -5,6 +5,7 @@ import random
 import time
 import warnings
 
+from dataclasses import dataclass
 from iter_utils import pairwise
 from itertools import permutations
 from functools import partial, cached_property, lru_cache
@@ -16,6 +17,8 @@ import numpy as np
 import pandas as pd
 
 from lagrange import LagrangePolynomial
+from numpy.linalg import inv
+from numpy.ma import make_mask
 from numpy.polynomial.polynomial import Polynomial, polyfromroots
 from scipy.linalg import norm
 from scipy.interpolate import lagrange
@@ -47,6 +50,17 @@ def polynomial_factory(n, range_start=-10, range_end=10):
     coefficients = polyfromroots(roots)
     Pp = Poly(coefficients[::-1])
     return Pp
+
+
+@dataclass
+class PartialFractionsDecomposition:
+
+    eta: float
+    coefficients: np.array
+    q: np.poly1d
+    rem: np.poly1d
+    diff: str
+    terms: str
 
 
 class ChebyshevPolynomial:
@@ -118,6 +132,13 @@ class ChebyshevPolynomial:
         return sorted(nodes)
 
 
+    def grid(self, n=1000):
+        X = np.linspace(self.E.min(), self.E.max(), n)
+        Y = np.linspace(-self.E_disk_radius, self.E_disk_radius, n)
+        xv, yv = np.meshgrid(X, Y)
+        return xv, yv, xv + 1j*yv
+
+
     @cached_property
     def known_values(self):
         if self._known_values is None:
@@ -127,7 +148,7 @@ class ChebyshevPolynomial:
 
     @cached_property
     def maximum_points(self):
-        return (self.polynomial - 1).r
+        return np.array([r for r in (self.polynomial - 1).r if np.isclose(r.imag, 0)])
 
 
     @cached_property
@@ -137,7 +158,7 @@ class ChebyshevPolynomial:
 
     @cached_property
     def minimum_points(self):
-        return (self.polynomial + 1).r
+        return np.array([r for r in (self.polynomial + 1).r if np.isclose(r.imag, 0)])
 
 
     @cached_property
@@ -151,9 +172,50 @@ class ChebyshevPolynomial:
 
 
     @cached_property
-    def critical_points(self):
-        return sorted(np.concatenate((self.minimum_points, self.maximum_points)))
+    def coef(self):
+        return self.polynomial.coef
 
+
+    @cached_property
+    def T(self):
+        return self.polynomial/self.coef[0]
+
+
+    @cached_property
+    def norm(self):
+        return norm(self.T(self.E), np.inf)
+
+
+    def partial_fractions_comparison(self, r):
+        r = np.sort(r)
+        p = np.poly1d(r, r=True)
+        q, rem = np.polydiv(self.T, p)
+        dp = p.deriv()
+        coefficients = rem(r)/dp(r)
+        diff = lambda z: [1/(z - pr) for pr in r]
+        eta = norm(p(self.E), np.inf)/self.norm
+        terms = lambda z: np.array([q(z)] + list(coef*d for coef, d in zip(coefficients, diff(z))))
+        return PartialFractionsDecomposition(eta, coefficients, q, rem, diff, terms)
+
+
+    @cached_property
+    def critical_points(self):
+        raw = sorted(np.concatenate((self.minimum_points, self.maximum_points)))
+        extremal_points = []
+        seen = set()
+        for i, pt in enumerate(raw):
+            duplicate = False
+            for j, other_pt in enumerate(raw):
+                if (j, i) in seen:
+                    continue
+                if i == j:
+                    continue
+                elif np.isclose(pt, other_pt, atol=2e-3):
+                    duplicate = True
+                seen.add((i, j))
+            if not duplicate:
+                extremal_points.append(pt)
+        return extremal_points
 
     @cached_property
     def left(self):
@@ -174,12 +236,26 @@ class ChebyshevPolynomial:
         for index, bounds in enumerate(critical_point_pairs):
             minimum, maximum = bounds
             interval = self.X[np.logical_and(minimum <= self.X, self.X <= maximum)]
-            if not index % 2:
-                if interval.size:
-                    Ek.append(interval)
+            if not interval.size:
+                continue
+
+            within_E = interval[abs(self(interval)) <= 1]
+            ratio_within_E = within_E.size/interval.size
+            if ratio_within_E >= 0.90:
+                Ek.append(interval)
             else:
                 gaps.append(interval)
         return Ek, gaps
+
+
+    @cached_property
+    def roots(self):
+        return np.sort(self.polynomial.r)
+
+
+    @cached_property
+    def r(self):
+        return self.roots
 
 
     @cached_property
@@ -527,6 +603,16 @@ class ChebyshevPolynomial:
             "*", label="Roots of $C_n$"
         )
 
+    @staticmethod
+    def vandermonde(Xp):
+        return np.array([[vi**i for i in range(len(Xp))] for vi in Xp])
+
+
+    def lagrange_polynomials(self, Xp):
+        V = self.vandermonde(Xp)
+        coefficients = (inv(V)*self(Xp)).transpose()
+        return [np.poly1d(coef[::-1]) for coef in coefficients]
+
 
     @property
     def gap_disk_color(self):
@@ -537,15 +623,20 @@ class ChebyshevPolynomial:
         return "green" if not self.parent else "darkseagreen"
 
 
-    def plot_disks(self, ax=None):
+    def plot_disks(self, ax=None, E_disk_color=None, gap_disk_color=None):
+        if E_disk_color is None:
+            E_disk_color = self.Ek_disk_color
+        if gap_disk_color is None:
+            gap_disk_color = self.gap_disk_color
+
         ax = ax if ax else self.ax
         for idx, disk_info in enumerate(zip(self.Ek_midpoints, self.Ek_radii)):
             midpoint, radius = disk_info
-            disk = plt.Circle((midpoint, 0), radius, fill=False, color=self.Ek_disk_color, linestyle="--")
+            disk = plt.Circle((midpoint, 0), radius, fill=False, color=E_disk_color, linestyle="--")
             ax.add_patch(disk)
         for idx, disk_info in enumerate(zip(self.gap_midpoints, self.gap_radii)):
             midpoint, radius = disk_info
-            disk = plt.Circle((midpoint, 0), radius, fill=False, color=self.gap_disk_color, linestyle="--")
+            disk = plt.Circle((midpoint, 0), radius, fill=False, color=gap_disk_color, linestyle="--")
             ax.add_patch(disk)
 
         E_disk = plt.Circle((self.E_midpoint, 0), self.E_disk_radius, fill=False, linestyle="-")
