@@ -1,6 +1,7 @@
 import hashlib
 import math
 import numbers
+import pickle
 import random
 import time
 import warnings
@@ -87,8 +88,16 @@ class ChebyshevPolynomial:
         self.parent = None
 
 
-    def normalize_polynomial(self, poly):
-        return poly / norm(poly(self.E), np.Inf)
+    def normalize_polynomial(self, poly, node_normalize=False):
+        if node_normalize:
+            c = poly / norm(poly(self.critical_values, np.Inf))
+        else:
+            c = poly / norm(poly(self.E), np.Inf)
+        return c
+
+
+    def normalize(self, poly):
+        return self.normalize_polynomial(poly)
 
 
     @cached_property
@@ -131,12 +140,37 @@ class ChebyshevPolynomial:
             nodes = self._nodes
         return sorted(nodes)
 
-
-    def grid(self, n=1000):
-        X = np.linspace(self.E.min(), self.E.max(), n)
-        Y = np.linspace(-self.E_disk_radius, self.E_disk_radius, n)
+    @staticmethod
+    def calculate_grid(r, q, n):
+        X = np.linspace(q - r, q + r, n)
+        Y = np.linspace(-r, r, n)
         xv, yv = np.meshgrid(X, Y)
         return xv, yv, xv + 1j*yv
+
+
+    @staticmethod
+    def calculate_circle_points(r, q, n):
+        theta = np.linspace(0, 2 * np.pi, n+1)
+        X = q + r*np.cos(theta)
+        Y = r*np.sin(theta)
+        return X + 1j*Y
+
+
+
+    def grid(self, n=1000):
+        return self.calculate_grid(self.E_disk_radius, self.E_midpoint, n)
+
+
+    def Ek_circles(self, n=1000):
+        disks = []
+        for r, q in zip(self.Ek_radii, self.Ek_midpoints):
+            d = self.calculate_circle_points(r, q, n)
+            disks.append(d)
+        return disks
+
+
+    def Ek_circle_points(self, n=1000):
+        return np.concatenate(self.Ek_circles(n=n))
 
 
     @cached_property
@@ -186,16 +220,25 @@ class ChebyshevPolynomial:
         return norm(self.T(self.E), np.inf)
 
 
-    def partial_fractions_comparison(self, r):
-        r = np.sort(r)
-        p = np.poly1d(r, r=True)
-        q, rem = np.polydiv(self.T, p)
-        dp = p.deriv()
+    @staticmethod
+    def partial_fractions_expansion(E, p_numerator, p_denominator):
+        r = np.sort(p_denominator.r)
+        q, rem = np.polydiv(p_numerator, p_denominator)
+        dp = p_denominator.deriv()
         coefficients = rem(r)/dp(r)
         diff = lambda z: [1/(z - pr) for pr in r]
-        eta = norm(p(self.E), np.inf)/self.norm
+        eta = norm(p_numerator(E), np.inf)/norm(p_denominator(E), np.inf)
         terms = lambda z: np.array([q(z)] + list(coef*d for coef, d in zip(coefficients, diff(z))))
         return PartialFractionsDecomposition(eta, coefficients, q, rem, diff, terms)
+
+
+    def partial_fractions_comparison(self, r):
+        p = np.poly1d(r, r=True)
+        return self.partial_fractions_expansion(self.E, self.T, p)
+
+    def partial_fractions_comparison2(self, r):
+        p = np.poly1d(r, r=True)
+        return self.partial_fractions_expansion(self.E, p, self.T)
 
 
     @cached_property
@@ -235,10 +278,10 @@ class ChebyshevPolynomial:
         Ek, gaps = [], []
         for index, bounds in enumerate(critical_point_pairs):
             minimum, maximum = bounds
-            interval = self.X[np.logical_and(minimum <= self.X, self.X <= maximum)]
+            interior = self.X[np.logical_and(minimum <= self.X, self.X <= maximum)]
+            interval = np.concatenate([[minimum], interior, [maximum]])
             if not interval.size:
                 continue
-
             within_E = interval[abs(self(interval)) <= 1]
             ratio_within_E = within_E.size/interval.size
             if ratio_within_E >= 0.90:
@@ -256,6 +299,11 @@ class ChebyshevPolynomial:
     @cached_property
     def r(self):
         return self.roots
+
+
+    @cached_property
+    def deriv(self):
+        return self.polynomial.deriv()
 
 
     @cached_property
@@ -282,7 +330,7 @@ class ChebyshevPolynomial:
 
 
     @cached_property
-    def E_intervals(self):
+    def Ek_intervals(self):
         return self.intervals(self.Ek)
 
 
@@ -309,7 +357,7 @@ class ChebyshevPolynomial:
 
     def Ek_nodes(self, v):
         d = []
-        for idx, start_end in enumerate(self.E_intervals):
+        for idx, start_end in enumerate(self.Ek_intervals):
             start, end = start_end
             nodes = []
             for i, node in enumerate(v):
@@ -329,7 +377,7 @@ class ChebyshevPolynomial:
     @cached_property
     def Ek_radii(self):
         radii = []
-        for left, right in self.E_intervals:
+        for left, right in self.Ek_intervals:
             radii.append(
                 (right - left)/2
             )
@@ -339,7 +387,7 @@ class ChebyshevPolynomial:
     @cached_property
     def Ek_midpoints(self):
         midpoints = []
-        for left, right in self.E_intervals:
+        for left, right in self.Ek_intervals:
             midpoints.append(
                 (left + right)/2
             )
@@ -382,7 +430,7 @@ class ChebyshevPolynomial:
 
 
     def group_nodes_Ek(self, v):
-        intervals = self.E_intervals
+        intervals = self.Ek_intervals
         groupings = []
         for left, right in intervals:
             interval_points = []
@@ -561,6 +609,18 @@ class ChebyshevPolynomial:
         ax.plot(self.right, right_y, "--", label=None, color=self.plot_color)
 
 
+    def save(self):
+        with open(f"{self.id}.poly", "wb") as f:
+            pickle.dump(self.polynomial, f)
+
+    @staticmethod
+    def read(path, domain_minimum=-10, domain_maximum=10):
+        with open(path, "rb") as f:
+            polynomial = pickle.load(f)
+        X = np.linspace(domain_minimum, domain_maximum, 1000000)
+        return ChebyshevPolynomial(X=X, polynomial=polynomial)
+
+
     def plot_Cn(self, ax=None):
         ax = self.ax if self.ax else ax
         self.plot_left_and_right(ax=ax)
@@ -603,15 +663,21 @@ class ChebyshevPolynomial:
             "*", label="Roots of $C_n$"
         )
 
+
+    @staticmethod
+    def lagrange_polynomials_(p, Xp):
+        V = np.array([[vi**i for i in range(len(Xp))] for vi in Xp])
+        coefficients = (inv(V)*p(Xp)).transpose()
+        return [np.poly1d(coef[::-1]) for coef in coefficients]
+
+
     @staticmethod
     def vandermonde(Xp):
         return np.array([[vi**i for i in range(len(Xp))] for vi in Xp])
 
 
     def lagrange_polynomials(self, Xp):
-        V = self.vandermonde(Xp)
-        coefficients = (inv(V)*self(Xp)).transpose()
-        return [np.poly1d(coef[::-1]) for coef in coefficients]
+        return self.lagrange_polynomials_(self, Xp)
 
 
     @property
