@@ -134,7 +134,7 @@ def trials_at_boundary():
 
 def trials2(c, c2, comparisons):
     """ Perform comparisons against normalized comparison polynomials in the list "comparisons" against
-        normalized Chebyshev polynomials c and c2
+        dual Chebyshev polynomials c and c2
     """
     # Initialize a 2D grid of points of complex numbers around the E disk
     _, _, zv = c.grid()
@@ -144,6 +144,7 @@ def trials2(c, c2, comparisons):
     czv = np.abs(c(zv))
     c2zv = np.abs(c2(zv))
     # Iterate over the normalized comparison polynomials. We call enumerate here to get the iteration number i
+    polys = []
     for i, p in enumerate(comparisons):
         # Evaluate the normalized comparison polynomial on the grid
         pzv = np.abs(p(zv))
@@ -155,13 +156,16 @@ def trials2(c, c2, comparisons):
         # the comparison polynomial, so we "or" the two logical arrays. If |c(z)| >= |p(z)| or |c2(z)| >= |p(z)|,
         # then we get True for that point (plotted as green), otherwise we get False (plotted as purple).
         holds_p = np.logical_or(holds_czv, holds_c2zv)
+        count_where_fails = holds_p.sum().sum()
+        if count_where_fails > 10000:
+            polys.append(p)
         # We "and" the result for this comparison with the global array. If any point z evaluates to False for any comparison,
         # the corresponding point in the global array will remain False across all comparisons.
         holds = np.logical_and(holds, holds_p)
         # Print a status update every 1000 polynomials so that I can know where we are in the comparisons
         if i and not (i % 1000):
             print(f"Checked against {i} polynomials")
-    return holds
+    return holds, polys
 
 if __name__ == '__main__':
     X = np.linspace(-1, 1, 1000000)
