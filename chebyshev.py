@@ -113,7 +113,6 @@ class ChebyshevPolynomial:
             poly = self._polynomial
         else:
             poly = lagrange(self.nodes, self.known_values)
-
         return poly
 
     @cached_property
