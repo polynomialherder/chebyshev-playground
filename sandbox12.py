@@ -83,9 +83,6 @@ def trials(c, critical_normalize=True, n=1000):
     xv, yv, zv = c.grid()
     holds = np.ones(zv.shape)
     czv = np.abs(c(zv))
-    E = c.E
-    Emin = E.min()
-    Emax = E.max()
     polynomials = []
     for i in range(n):
         p = np.poly1d(np.random.uniform(-50, 50, 2), r=True)
@@ -102,16 +99,18 @@ def trials(c, critical_normalize=True, n=1000):
     return holds, polynomials
 
 
-if __name__ == '__main__':
+
+
+def trials_at_boundary():
     X = np.linspace(-10, 10, 1000000)
-    c3 = ChebyshevPolynomial(X=X, n=3)
+    c3 = ChebyshevPolynomial(X=X, polynomial=np.poly1d([1, 0, -3]))
     # Generate an array corresponding to the boundary points of all Ek disks
     d = c3.Ek_circle_points(n=1000)
     start_time = time.time()
     # Generate random comparison polynomials
     trials = 3000000
     print(f"Generating {trials:,} random comparison polynomials")
-    comparisons = [np.poly1d(np.random.uniform(-10, 10, 3), r=True) for _ in range(trials)]
+    comparisons = [np.poly1d(np.random.uniform(-10, 10, 2), r=True) for _ in range(trials)]
     print(f"Checking {c3.id} with roots at {c3.r} against {trials} comparison polynomials")
     for j, p in enumerate(comparisons):
         pp = c3.normalize_polynomial(p)
@@ -131,3 +130,52 @@ if __name__ == '__main__':
             elapsed = time.time() - start_time
             print(f"Checked against {j} polynomials in {elapsed}s")
     print(f"Run finished. Took {time.time() - start_time}s")
+
+
+def trials2(c, c2, comparisons):
+    """ Perform comparisons against normalized comparison polynomials in the list "comparisons" against
+        normalized Chebyshev polynomials c and c2
+    """
+    # Initialize a 2D grid of points of complex numbers around the E disk
+    _, _, zv = c.grid()
+    # Initialize a boolean grid of all 1s/True to maintain state between iterations
+    holds = np.ones(zv.shape)
+    # Evaluate the Chebyshev polynomials on the complex grid
+    czv = np.abs(c(zv))
+    c2zv = np.abs(c2(zv))
+    # Iterate over the normalized comparison polynomials. We call enumerate here to get the iteration number i
+    for i, p in enumerate(comparisons):
+        # Evaluate the normalized comparison polynomial on the grid
+        pzv = np.abs(p(zv))
+        # Obtain 2 boolean arrays giving True where the modulus of the given Chebyshev polynomial beats the modulus of p,
+        # and False otherwise
+        holds_czv = czv >= pzv
+        holds_c2zv = c2zv >= pzv
+        # We want the green region to be where at least one of the Chebyshev polynomials beat
+        # the comparison polynomial, so we "or" the two logical arrays. If |c(z)| >= |p(z)| or |c2(z)| >= |p(z)|,
+        # then we get True for that point (plotted as green), otherwise we get False (plotted as purple).
+        holds_p = np.logical_or(holds_czv, holds_c2zv)
+        # We "and" the result for this comparison with the global array. If any point z evaluates to False for any comparison,
+        # the corresponding point in the global array will remain False across all comparisons.
+        holds = np.logical_and(holds, holds_p)
+        # Print a status update every 1000 polynomials so that I can know where we are in the comparisons
+        if i and not (i % 1000):
+            print(f"Checked against {i} polynomials")
+    return holds
+
+if __name__ == '__main__':
+    X = np.linspace(-1, 1, 1000000)
+    c2 = np.poly1d([2, 0, -1])
+    c3 = np.poly1d([4, 0, -3, 0])
+    C2 = ChebyshevPolynomial(X=X, polynomial=c2)
+    C3 = ChebyshevPolynomial(X=X, polynomial=c3)
+    print("Generating comparison polynomials")
+    comparisons = [
+        ChebyshevPolynomial(X=X, n=2) for _ in range(25000)
+    ]
+    print("Normalizing comparison polynomials")
+    comparisons = [
+        p.polynomial/norm(p(X), np.inf) for p in comparisons
+    ]
+    print(f"Performing trials against comparison polynomials")
+    holds = trials2(C2, C3, comparisons)
