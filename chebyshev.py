@@ -7,8 +7,7 @@ import time
 import warnings
 
 from dataclasses import dataclass
-from iter_utils import pairwise
-from itertools import permutations
+from itertools import permutations, pairwise
 from functools import partial, cached_property, lru_cache
 from random import uniform
 
@@ -90,7 +89,7 @@ class ChebyshevPolynomial:
 
     def normalize_polynomial(self, poly, node_normalize=False):
         if node_normalize:
-            c = poly / norm(poly(self.critical_values, np.Inf))
+            c = poly / norm(poly(self.critical_points), np.Inf)
         else:
             c = poly / norm(poly(self.E), np.Inf)
         return c
@@ -129,11 +128,11 @@ class ChebyshevPolynomial:
 
     @cached_property
     def nodes(self):
-
         min_ = self.X.min()
         max_ = self.X.max()
         midpoint = (min_ + max_)/2
         if self._nodes is None:
+            #nodes = np.random.choice(self.X, size=self.n + 1)
             nodes = np.random.triangular(min_, midpoint, max_, size=self.n+1)
         else:
             nodes = self._nodes
@@ -155,7 +154,6 @@ class ChebyshevPolynomial:
         return X + 1j*Y
 
 
-
     def grid(self, n=1000):
         return self.calculate_grid(self.E_disk_radius, self.E_midpoint, n)
 
@@ -170,6 +168,28 @@ class ChebyshevPolynomial:
 
     def Ek_circle_points(self, n=1000):
         return np.concatenate(self.Ek_circles(n=n))
+    
+
+    @staticmethod
+    def _circle_max(T, r, q):
+        D = T.calculate_circle_points(r, q, n=1_000_000)
+        TD = np.abs(T(D))
+        argmax = np.argmax(TD)
+        return D[argmax]
+    
+
+    def _circle_max_angle(self, T, r, q, deg=False):
+        max_circle = self._circle_max(T, r, q)
+        return np.abs(np.angle(max_circle - q, deg=deg))
+    
+
+    def circle_max(self, r, q):
+        return self._circle_max(self, r, q)
+    
+
+    def circle_max_angle(self, r, q, deg=False):
+        return self._circle_max_angle(self, r, q, deg)
+
 
 
     @cached_property
@@ -181,7 +201,7 @@ class ChebyshevPolynomial:
 
     @cached_property
     def maximum_points(self):
-        return np.array([r for r in (self.polynomial - 1).r if np.isclose(r.imag, 0)])
+        return np.array([r.real for r in (self.polynomial - 1).r if np.isclose(r.imag, 0, atol=1e-6)])
 
 
     @cached_property
@@ -191,7 +211,7 @@ class ChebyshevPolynomial:
 
     @cached_property
     def minimum_points(self):
-        return np.array([r for r in (self.polynomial + 1).r if np.isclose(r.imag, 0)])
+        return np.array([r.real for r in (self.polynomial + 1).r if np.isclose(r.imag, 0, atol=1e-6)])
 
 
     @cached_property
@@ -277,10 +297,7 @@ class ChebyshevPolynomial:
         Ek, gaps = [], []
         for index, bounds in enumerate(critical_point_pairs):
             minimum, maximum = bounds
-            interior = self.X[np.logical_and(minimum <= self.X, self.X <= maximum)]
-            interval = np.concatenate([[minimum], interior, [maximum]])
-            if not interval.size:
-                continue
+            interval = np.linspace(minimum, maximum, 1_000_000) #self.X[np.logical_and(minimum <= self.X, self.X <= maximum)]
             within_E = interval[abs(self(interval)) <= 1]
             ratio_within_E = within_E.size/interval.size
             if ratio_within_E >= 0.90:
@@ -618,6 +635,14 @@ class ChebyshevPolynomial:
             polynomial = pickle.load(f)
         X = np.linspace(domain_minimum, domain_maximum, 1000000)
         return ChebyshevPolynomial(X=X, polynomial=polynomial)
+    
+
+    @staticmethod
+    def classical(n):
+        t = lambda n, m: (-1)**m * (n/(n-m)) * math.comb(n-m, m) * 2 **(n - 2*m - 1)
+        coefs = [t(n, m//2) if m % 2 else 0 for m in range(n+2)]
+        X = np.linspace(-1, 1, 1_000_000)
+        return ChebyshevPolynomial(X=X, polynomial=np.poly1d(coefs))
 
 
     def plot_Cn(self, ax=None):
