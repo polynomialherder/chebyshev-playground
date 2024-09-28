@@ -870,7 +870,7 @@ class Poly(Polynomial):
             # in case somehow there are no coefficients at all
             body = '0'
 
-        return rf"$x \mapsto {body}$"
+        return rf"${body}$"
 
 
 
