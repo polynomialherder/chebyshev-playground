@@ -70,7 +70,7 @@ class ChebyshevPolynomial:
 
     def __init__(self, n=None, X=None, polynomial=None, seed=1, nodes=None, known_values=None, absolute=False):
         if X is None:
-            raise Exception("A discretized domain X must be provided")
+            X = np.linspace(-2, 2, 1000)
         if n is None and polynomial is None:
             raise Exception("One of n or polynomial must be provided")
         self.n = n or polynomial.order
@@ -87,8 +87,8 @@ class ChebyshevPolynomial:
         self.parent = None
 
 
-    def normalize_polynomial(self, poly, node_normalize=False):
-        if node_normalize:
+    def normalize_polynomial(self, poly, discrete=False):
+        if discrete:
             c = poly / norm(poly(self.critical_points), np.Inf)
         else:
             c = poly / norm(poly(self.E), np.Inf)
@@ -175,7 +175,8 @@ class ChebyshevPolynomial:
         D = T.calculate_circle_points(r, q, n=1_000_000)
         TD = np.abs(T(D))
         argmax = np.argmax(TD)
-        return D[argmax]
+        z0 = D[argmax]
+        return z0.real + abs(z0.imag)*1j
     
 
     def _circle_max_angle(self, T, r, q, deg=False):
@@ -638,11 +639,21 @@ class ChebyshevPolynomial:
     
 
     @staticmethod
-    def classical(n):
+    def classical(n, kind=1):
+        # Degree n Classical Chebyshev polynomials of the second kind are defined in terms of 
+        # the degree n + 1 Chebyshev polynomials of the first kind
+        if kind == 2:
+            n = n + 1
+
         t = lambda n, m: (-1)**m * (n/(n-m)) * math.comb(n-m, m) * 2 **(n - 2*m - 1)
         coefs = [t(n, m//2) if m % 2 else 0 for m in range(n+2)]
         X = np.linspace(-1, 1, 1_000_000)
-        return ChebyshevPolynomial(X=X, polynomial=np.poly1d(coefs))
+        p = np.poly1d(coefs).deriv()/n if kind == 2 else np.poly1d(coefs) 
+        return ChebyshevPolynomial(X=X, polynomial=p)
+
+    def U(self):
+        return self.deriv/n
+
 
 
     def plot_Cn(self, ax=None):
