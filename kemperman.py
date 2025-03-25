@@ -5,7 +5,12 @@ from scipy.interpolate import lagrange
 from scipy.linalg import norm
 from chebyshev import ChebyshevPolynomial
 
+from numexp import ExperimentLogger
+
 if __name__ == '__main__':
+    logger = ExperimentLogger()
+    logger.start_experiment(name="Kemperman Inequality", tags=["kemperman"])
+
     X = np.array([-2, -1, 1, 2])
     P = lagrange(X, [1, -1, -1, 1])
     P = np.poly1d(P.coef[1::])
@@ -19,8 +24,8 @@ if __name__ == '__main__':
 
     holds = np.ones(zv.shape)
     for _ in range(1000):
-        Q = np.poly1d(np.random.uniform(-50, 50, 2), r=True)
-        QQ = Q / norm(Q(V)/P(V), np.inf)
+        Q = np.poly1d(np.random.uniform(-1, 1, 2), r=True)
+        QQ = Q / norm(Q(V), np.inf)
 
         holds = np.logical_and(holds, Pzv > np.abs(QQ(zv)))
 
@@ -38,4 +43,8 @@ if __name__ == '__main__':
     
     ax.legend()
     ax.set_aspect('equal')
+    logger.save_figure(fig, "failure-region.png")
+
     fig.show()
+
+    logger.end_experiment()

@@ -7,6 +7,8 @@ from itertools import combinations, combinations_with_replacement
 
 import matplotlib.pyplot as plt
 
+from scipy.linalg import norm
+
 
 def lebesgue_from_nodes(nodes):
     # Form the monic polynomial (z - x_0)(z - x_1)...(z - x_n)
@@ -18,17 +20,37 @@ def lebesgue_from_nodes(nodes):
     l = [num/ellp(node) for num, node in zip(numerators, nodes)]
     # Return a function. In Python the lambda keyword signals an inline-defined function -- its unrelated
     # to the usual denotation of the Lebesgue function using the Greek letter lambda
-    return lambda x: [abs(f.deriv()(x)) for f in l]
+    return lambda x: sum([abs(f.deriv()(x)) for f in l])
 
 
-if __name__ == '__main__':
-    X = np.linspace(-10, 10, 1_000_000)
-    T = ChebyshevPolynomial.read("6118e86.poly")
-    norms = []
-    # For each k in (n+1, 2*n), generate a k-length list of indices
-    # These indices will correspond to Ek sets from which we'll select
-    # a random point. We do this rather than selecting randomly from E
-    # directly so that we can keep track of patterns in "winning" node-sets
+
+def lebesgue_function(A, z):
+    A = np.array(A, dtype=float)
+    n = len(A)
+    total = 0.0
+    
+    for k in range(n):
+        # Compute the derivative of the k-th Lagrange basis polynomial at z
+        l_k_prime = 0.0
+        for m in range(n):
+            if m == k:
+                continue
+            
+            # Indices j != k, j != m
+            idx = [j for j in range(n) if j != k and j != m]
+            
+            # Partial product for derivative term
+            numerator = np.prod(z - A[idx])
+            denominator = np.prod(A[k] - A[idx]) * (A[k] - A[m])
+            
+            l_k_prime += numerator / denominator
+        
+        total += abs(l_k_prime)
+    
+    return total
+
+
+def old():
     for ekcomb in combinations_with_replacement(range(T.n), T.n+1):
         # We'll generate 10 nodesets, choosing each from the Ek sets listed in
         # ekcomb. For example, if ekcomb is (1
@@ -61,3 +83,73 @@ if __name__ == '__main__':
     T.plot_disks(ax=ax)
     ax.plot(v.real, v.imag, "o")
     fig.show()
+
+
+
+
+if __name__ == '__main__':
+
+    # Generate a Chebyshev polynomial and check that for at least one alternating set,
+    # the Lebesgue function for that alternating set attains its maximum at max {min(E), max(E)} = max {min(A), max(A)}
+    for trial in range(500):
+        # Generate a Chebyshev polynomial
+        T = ChebyshevPolynomial(n=4)
+
+        # All extremal points of T
+        E0 = T.critical_points 
+
+        max_indices = []
+
+        for alternating_set in T.alternating_sets():
+
+            Leb = lebesgue_from_nodes(alternating_set)
+
+            # Get the index at which the Lebesgue function attains 
+            # its max absolute value on E
+            #
+            # We hope for this to be 0 or len(E) - 1
+            max_indices.append(np.argmax(Leb(T.E)))
+
+        admissible = [T.E.size - 1, 0]
+        if not any(it in admissible for it in max_indices):
+            print("Found a counterexample")
+
+            # Generate plots of the counterexample Lebesgue functions on E
+            alt_sets = list(T.alternating_sets())
+            fig, axes = plt.subplots(nrows=len(alt_sets), figsize=(8, 3 * len(alt_sets)))
+
+            # If there's only one alternating set, ensure 'axes' is iterable
+            if len(alt_sets) == 1:
+                axes = [axes]
+
+            x = T.E  # domain points used for evaluation
+            for i, alt_set in enumerate(alt_sets):
+                ax = axes[i]
+
+                Leb = lebesgue_from_nodes(alt_set)
+                y = Leb(x)
+
+
+                ax.plot(x, y, label='Lebesgue function')
+                ax.plot(T.critical_points, [0]*len(T.critical_points), 'go', label='Critical points')
+                ax.plot(alt_set, [0]*len(alt_set), 'ro', label='Alternating set')
+
+                ax.set_title(f"Alternating set {i}")
+                ax.legend()
+
+            plt.tight_layout()
+            plt.savefig("counterexample.png")
+            plt.close(fig)
+
+
+            break
+
+        print(max_indices)
+
+        if not (trial % 10):
+            print(f"Checked {trial+1} examples")
+
+
+
+
+

@@ -7,7 +7,7 @@ import time
 import warnings
 
 from dataclasses import dataclass
-from itertools import permutations, pairwise
+from itertools import permutations, pairwise, product
 from functools import partial, cached_property, lru_cache
 from random import uniform
 
@@ -279,6 +279,45 @@ class ChebyshevPolynomial:
             if not duplicate:
                 extremal_points.append(pt)
         return extremal_points
+
+
+    def alternating_sets(self):
+        V = [np.sign(x) for x in self(self.critical_points)]
+        indices = self.alternating_indices(V)
+        alternating_sets = []
+        for index_set in indices:
+            alternating_sets.append([self.critical_points[k] for k in index_set])
+        return alternating_sets
+
+
+    def alternating_indices(self, arr):
+        # 1) Identify consecutive "runs" of identical signs
+        runs = []
+        start = 0
+        for i in range(1, len(arr)):
+            if arr[i] != arr[i-1]:
+                runs.append(range(start, i))
+                start = i
+        runs.append(range(start, len(arr)))  # include the last run
+
+        # 2) Build choice sets for each run
+        #    - First run: only pick its first index
+        #    - Last run: only pick its last index
+        #    - Middle runs: can pick any index
+        choices = []
+        for j, run in enumerate(runs):
+            run = list(run)  # turn range into a list of indices
+            if j == 0:
+                choices.append([run[0]])
+            elif j == len(runs) - 1:
+                choices.append([run[-1]])
+            else:
+                choices.append(run)
+
+        # 3) Combine via Cartesian product
+        result = [list(seq) for seq in product(*choices)]
+        return result
+
 
     @cached_property
     def left(self):
@@ -626,9 +665,10 @@ class ChebyshevPolynomial:
         ax.plot(self.right, right_y, "--", label=None, color=self.plot_color)
 
 
-    def save(self):
+    def save(self, f=None):
         with open(f"{self.id}.poly", "wb") as f:
             pickle.dump(self.polynomial, f)
+
 
     @staticmethod
     def read(path, domain_minimum=-10, domain_maximum=10):

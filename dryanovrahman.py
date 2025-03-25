@@ -1,3 +1,5 @@
+from numexp import ExperimentLogger
+
 from functools import cached_property
 
 import numpy as np
@@ -7,6 +9,16 @@ import matplotlib.pyplot as plt
 from scipy.linalg import norm
 
 from chebyshev import Poly
+
+logger = ExperimentLogger()
+experiment_id = logger.start_experiment(
+    name="Dryanov-Rahman Plots", 
+    comment="""This script computes the Dryanov-Rahman polynomials for $n = 2, 3, \ldots, 6$ and plots them over the interval $[-1, 1]$.
+
+**D. Dryanov and Q. I. Rahman** [On the Growth of Polynomials](https://www.jstor.org/stable/118795), Proceedings of the American Mathematical Society, Vol. 126, No. 5 (May, 1998), pp. 1415-1423
+    """,
+    tags=["dryanov-rahman", "polynomial-inequalities"]
+)
 
 class DRPolynomials:
 
@@ -30,7 +42,6 @@ class DRPolynomials:
     @cached_property
     def eta(self):
         return np.array([-1 + 2*k/self.n for k in range(self.n+1)])
-
 
 
     def normalize_polynomial(self, p):
@@ -66,7 +77,7 @@ class DRPolynomials:
             fig.show()
             return
 
-        fig.savefig(saveto)
+        logger.save_figure(fig, saveto)
 
 
     def plot_eta(self, ax, color="pink"):
@@ -91,15 +102,13 @@ class DRPolynomials:
         fig.suptitle(f"{n=}")
 
         self.plot_eta(ax=ax_, color="purple")
-        #ax_.legend(bbox_to_anchor=(-0.18, -(min([self.n+1, 5])/5)*0.7), loc="center", fontsize=12)
-        #fig.subplots_adjust(bottom=0.35, right=0.87)
 
         if savefig is None and ax is None:
             fig.show()
         elif ax is not None:
             return ax
         elif savefig is not None:
-            fig.savefig(savefig)
+            logger.save_figure(fig, savefig)
 
 
     def plot_disks(self, ax):
@@ -174,7 +183,7 @@ def trials():
 
         fig.suptitle(f"n={N}")
 
-        fig.savefig(f"Animations/Comparisons/{N:03}.png")
+        logger.save_figure(fig, experiment_id, f"Comparisons-{N:03}.png")
 
         plt.close()
 
@@ -187,7 +196,7 @@ def trials():
         ax.plot(P.eta.real, P.eta.imag, "o", color="yellow")
         P.plot_disks(ax=ax) 
 
-        fig.savefig(f"Animations/PointMaximizer/{N:03}.png")
+        logger.save_figure(fig, experiment_id, f"PointMaximizer-{N:03}.png")
 
         plt.close()
 
@@ -196,7 +205,6 @@ def plot_real():
     for N in range(1, 10):
         P = DRPolynomials(N)
         P.plot(saveto=f"DRP{N:03}.png")
-
         plt.close()
 
 
@@ -204,3 +212,4 @@ if __name__ == '__main__':
     for k in [2, 3, 4, 5]:
         P = DRPolynomials(k)
         P.real_plot(savefig=f"{k:03}-real.png")
+    logger.end_experiment()
