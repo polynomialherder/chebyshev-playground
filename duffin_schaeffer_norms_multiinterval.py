@@ -1,4 +1,5 @@
 import json
+import time
 
 import numpy as np
 import matplotlib.pyplot as plt 
@@ -7,21 +8,18 @@ from scipy.interpolate import lagrange
 from scipy.linalg import norm
 from chebyshev import ChebyshevPolynomial
 
-from numexp import ExperimentLogger
 from cli import build_static_site
 
 
 if __name__ == '__main__':
-    logger = ExperimentLogger()
+    start_time = time.time()
 
-
-    comparisons = 200
+    comparisons = 25000
     n = 4
-    T = ChebyshevPolynomial(n=n)
+    T = ChebyshevPolynomial.read("dc804fa.poly")
+    #T = ChebyshevPolynomial(n=n)
 
     V = T.critical_points
-
-    V = [V[0], V[1], V[2], V[4], V[5]]
 
     Tp = T.polynomial.deriv()
     Tp_norm = norm(Tp(V), np.inf)
@@ -38,26 +36,6 @@ if __name__ == '__main__':
         "T' norm": Tp_norm
     }
 
-    logger.start_experiment(
-        name="Duffin-Schaeffer Estimates (multiple interval, normalized on 2n critical points)",
-        tags=["duffin-schaeffer"],
-        comment="""This script checks that
-$$||T_n'||_E \ge ||P'||_E$$
-
-holds, where $P$ is degree $n$ and has norm $1$ on a set $B$ is the full set of extremal points for $T_n$.
-
-Polynomials $P$ are chosen by choosing n random roots from $[- \inf E, \sup E]$, then normalizing the resulting monic polynomial on the set $B$.
-
-This process outputs a datafile 
-
-**Parameters**: {{PARAMETERS}}.
-
-### Duffin, R. J. and A. C. Schaeffer
-[A refinement of an inequality of the brothers Markoff](https://www.jstor.org/stable/1990125), *Trans. Amer. Math. Soc., **50** (1941), 517-528
-        """.replace("{{PARAMETERS}}", json.dumps(parameters, indent=4))
-    )
-
-    print("Parameters", json.dumps(parameters, indent=4))
     results = {}
 
     failures = 0
@@ -80,7 +58,7 @@ This process outputs a datafile
 
         norms.append(QQp_norm)
         
-        if not (i % 25):
+        if not (i % 500):
             print(f"Checked {i+1} polynomials")
     
     results = {
@@ -92,6 +70,4 @@ This process outputs a datafile
 
 
 print(results)
-logger.save_dict(results, "output.json")
-logger.end_experiment()
-build_static_site("experiments.db", "dist")
+print(f"Run took {round(time.time() - start_time, 2)}s")

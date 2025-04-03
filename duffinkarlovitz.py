@@ -1,4 +1,5 @@
 from scipy.linalg import norm
+from scipy.interpolate import lagrange
 
 from chebyshev import ChebyshevPolynomial
 import numpy as np
@@ -21,6 +22,43 @@ def lebesgue_from_nodes(nodes):
     # Return a function. In Python the lambda keyword signals an inline-defined function -- its unrelated
     # to the usual denotation of the Lebesgue function using the Greek letter lambda
     return lambda x: sum([abs(f.deriv()(x)) for f in l])
+
+
+def lebesgue_from_nodes_signed(nodes):
+    # Form the monic polynomial (z - x_0)(z - x_1)...(z - x_n)
+    ell = np.poly1d(nodes, r=True)
+    ellp = ell.deriv()
+    # Take l/(z - x_k) for k in 0 ... n
+    numerators = [(ell/np.poly1d([r], r=True))[0] for r in nodes]
+    # Define the l_k:
+    l = [num/ellp(node) for num, node in zip(numerators, nodes)]
+    # Return a function. In Python the lambda keyword signals an inline-defined function -- its unrelated
+    # to the usual denotation of the Lebesgue function using the Greek letter lambda
+    return [f.deriv() for f in l]
+
+
+def construct_extremal(T):
+    V = T.critical_points
+
+    extremal = []
+
+    for alternating_set in T.alternating_sets():
+        Leb = lebesgue_from_nodes(alternating_set)
+        max_idx = np.argmax(Leb(V))
+        z0 = V[max_idx]
+
+        Leb_derivs = lebesgue_from_nodes_signed(alternating_set)
+
+        Y = [np.sign(f(z0)) for f in Leb_derivs]
+        
+        extremal.append(
+            lagrange(alternating_set, Y)
+        )
+    return extremal
+        
+
+
+
 
 
 
