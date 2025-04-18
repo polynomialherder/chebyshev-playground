@@ -123,6 +123,51 @@ def old():
     fig.show()
 
 
+import numpy as np
+import matplotlib.pyplot as plt
+
+def plot_extremal_construction(T):
+    """Generate and save visualizations for a ChebyshevPolynomial T and its extremal constructions."""
+    
+    # First plot: original Chebyshev polynomial T
+    fig, axes = plt.subplots(1, 2, figsize=(10, 6))
+    x = np.array(T.critical_points)
+    for ax, (left, right) in zip(axes, [(0, 1), (2, 3)]):
+        T.plot_Ek(ax=ax)
+        ax.plot(x.real, x.imag, "o", color="green", label="Critical points for T")
+        ax.set_xlim(T.Ek[left].min(), T.Ek[right].max())
+        ax.set_ylim(-1, 1)
+        ax.grid(True)
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.1), ncol=1)
+    fig.subplots_adjust(bottom=0.25)
+    fig.savefig("T-base-polynomial.png", bbox_inches="tight")
+    plt.close(fig)
+
+    # Plot each extremal polynomial constructed from T
+    alternating_sets = T.alternating_sets()
+    for k, p in enumerate(construct_extremal(T)):
+        T_p = ChebyshevPolynomial(polynomial=p)
+        alternating_set = np.array(alternating_sets[k])
+        x = np.array(T_p.critical_points)
+
+        fig, axes = plt.subplots(1, 2, figsize=(10, 6))
+        for ax, (left, right) in zip(axes, [(0, 1), (2, 3)]):
+            T_p.plot_Ek(ax=ax)
+            ax.plot(x.real, x.imag, "o", color="green", label="Critical points for P")
+            ax.plot(alternating_set.real, alternating_set.imag, "o", color="red", label="Alternating set")
+            ax.set_xlim(T_p.Ek[left].min(), T_p.Ek[right].max())
+            ax.set_ylim(-1, 1)
+            ax.grid(True)
+
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.1), ncol=2)
+        fig.subplots_adjust(bottom=0.25)
+        fig.savefig(f"extremal-polynomials-{k:03}.png", bbox_inches="tight")
+        plt.close(fig)
+
+
 
 
 if __name__ == '__main__':

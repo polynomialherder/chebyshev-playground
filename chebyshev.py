@@ -140,8 +140,8 @@ class ChebyshevPolynomial:
 
     @staticmethod
     def calculate_grid(r, q, n):
-        X = np.linspace(q - r, q + r, n)
-        Y = np.linspace(-r, r, n)
+        X = np.linspace(q.real - r, q.real + r, n)
+        Y = np.linspace(q.imag-r, q.imag+r, n)
         xv, yv = np.meshgrid(X, Y)
         return xv, yv, xv + 1j*yv
 
