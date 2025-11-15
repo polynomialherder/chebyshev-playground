@@ -214,6 +214,22 @@ class ChebyshevPolynomial:
         return np.array(self.Ek_midpoints) + np.array(self.Ek_radii)*1j
 
 
+    def reversal(self):
+        return self._reversal(self)
+    
+
+    def _reversal(self, p):
+        return np.poly1d(p.coef[::-1])
+    
+
+    def disk_reversal(self, r, q):
+        p = np.poly1d([r, q])
+        u = np.poly1d([1/r, -q/r])
+        Tp = self(p)
+        R = self._reversal(Tp)
+        return R(u)
+
+
     def comparison_plot_(self, L, R, grid_midpoint, grid_radius, ax_=None, additional=None, saveto=None, title=None, suptitle=None):
         real_min = grid_midpoint.real - grid_radius
         real_max = grid_midpoint.real + grid_radius
