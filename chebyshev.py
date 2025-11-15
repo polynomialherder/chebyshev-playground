@@ -7,7 +7,7 @@ import time
 import warnings
 
 from dataclasses import dataclass
-from itertools import permutations, pairwise, product
+from itertools import combinations, permutations, pairwise, product
 from functools import partial, cached_property, lru_cache
 from random import uniform
 
@@ -69,10 +69,10 @@ class ChebyshevPolynomial:
     """
 
     def __init__(self, n=None, X=None, polynomial=None, seed=1, nodes=None, known_values=None, absolute=False):
-        if X is None:
-            X = np.linspace(-2, 2, 1000)
         if n is None and polynomial is None:
             raise Exception("One of n or polynomial must be provided")
+        if X is None:
+            X = np.linspace(-20, 20, 1000)
         self.n = n or polynomial.order
         self.X = X
         self.seed = seed
@@ -85,6 +85,24 @@ class ChebyshevPolynomial:
         self._nodes = nodes
         self._known_values = known_values
         self.parent = None
+
+
+    @cached_property
+    def sign_changes(self):
+        current_sign = np.sign(self(self.critical_points[0]))
+        sign_changes = 0
+        for pt in self.critical_points[1:]:
+            if np.sign(self(pt)) == current_sign:
+                continue
+            else:
+                sign_changes += 1
+                current_sign = np.sign(self(pt))
+        return sign_changes
+
+
+    @cached_property
+    def is_chebyshev(self):
+        return self.sign_changes == self.n
 
 
     def normalize_polynomial(self, poly, discrete=False):
@@ -133,7 +151,7 @@ class ChebyshevPolynomial:
         midpoint = (min_ + max_)/2
         if self._nodes is None:
             #nodes = np.random.choice(self.X, size=self.n + 1)
-            nodes = np.random.triangular(min_, midpoint, max_, size=self.n+1)
+            nodes = np.random.uniform(min_, max_, size=self.n+1)
         else:
             nodes = self._nodes
         return sorted(nodes)
@@ -190,6 +208,91 @@ class ChebyshevPolynomial:
 
     def circle_max_angle(self, r, q, deg=False):
         return self._circle_max_angle(self, r, q, deg)
+
+
+    def circle_tips(self):
+        return np.array(self.Ek_midpoints) + np.array(self.Ek_radii)*1j
+
+
+    def comparison_plot_(self, L, R, grid_midpoint, grid_radius, ax_=None, additional=None, saveto=None, title=None, suptitle=None):
+        real_min = grid_midpoint.real - grid_radius
+        real_max = grid_midpoint.real + grid_radius
+        imag_min = grid_midpoint.imag - grid_radius
+        imag_max = grid_midpoint.imag + grid_radius
+
+        xv, yv, zv = self.calculate_grid(grid_radius, grid_midpoint, 1000)
+
+        if ax_ is None:
+            print(f"{L=}, {R=}")
+            self.initialize_plot()
+            fig, ax = self.fig, self.ax
+        else:
+            ax = ax_
+            fig = ax.figure 
+
+        ax.contourf(xv, yv, np.abs(L(zv)) > np.abs(R(zv)))
+
+        if additional is not None:
+            ax.plot(additional.real, additional.imag, "o", color="red")
+
+        self.plot_disks(ax=ax)
+
+        ax.set_xlim(real_min, real_max)
+        ax.set_ylim(imag_min, imag_max)
+
+        if ax_ is None and saveto is None:
+            fig.show()
+
+
+
+    @staticmethod
+    def in_set(intervals, point):
+        for l, r in intervals:
+            if l <= point <= r:
+                return True
+        return False
+
+
+    def extremal_polynomial_(self, intervals, roots, evaluation_points=None):
+
+        Q = np.poly1d(roots, r=True)
+        
+        if evaluation_points is None:
+            evaluation_points = []
+
+        QQ = Q.integ(1)
+        
+        eval_pts = [pt for pt in QQ.deriv().r if in_set(intervals, pt)]
+        eval_pts += evaluation_points
+
+        min_ = min(QQ(eval_pts))
+        max_ = max(QQ(eval_pts))
+        
+        # Normalize the polynomial so it has zero average on the interval
+
+        normalization_set = np.concatenate([np.linspace(l, r, 1_000_000) for l, r in intervals])
+
+        P = Q.integ(1, -(min_ + max_) / 2)
+        return P/norm(P(normalization_set), np.inf)
+
+
+    def extremal_polynomials_(self, T):
+        polynomials = []
+        for n in range(1, T.n):
+            for comb in combinations(T.Ek_midpoints, n):
+                polynomials.append(
+                    extremal_polynomial(T.Ek_intervals, comb, T.critical_points)
+                )
+        return polynomials
+
+
+    def extremal_polynomials(self):
+        return self.extremal_polynomials_(self)
+            
+
+
+    def comparison_plot(self, P, ax=None, additional=None, saveto=None, title=None, suptitle=None):
+        self.comparison_plot_(self, P, self.E_midpoint, self.E_disk_radius, ax_=ax, additional=additional, saveto=saveto,  title=title, suptitle=suptitle)
 
 
 
@@ -333,14 +436,10 @@ class ChebyshevPolynomial:
 
     @cached_property
     def calculate_intervals(self):
-        critical_point_pairs = pairwise(self.critical_points)
         Ek, gaps = [], []
-        for index, bounds in enumerate(critical_point_pairs):
-            minimum, maximum = bounds
-            interval = np.linspace(minimum, maximum, 1_000_000) #self.X[np.logical_and(minimum <= self.X, self.X <= maximum)]
-            within_E = interval[abs(self(interval)) <= 1]
-            ratio_within_E = within_E.size/interval.size
-            if ratio_within_E >= 0.90:
+        for left, right in pairwise(self.critical_points):
+            interval = np.linspace(left, right, 1_000_000)
+            if np.sign(self(left)) != np.sign(self(right)):
                 Ek.append(interval)
             else:
                 gaps.append(interval)
@@ -582,7 +681,7 @@ class ChebyshevPolynomial:
         if self.parent:
             self.fig, self.ax = self.parent.fig, self.parent.ax
         else:
-            self.fig, self.ax = plt.subplots(figsize=size)
+            self.fig, self.ax = plt.subplots(figsize=size, constrained_layout=True)
 
 
     def clear_plot(self):
