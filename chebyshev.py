@@ -810,6 +810,31 @@ class ChebyshevPolynomial:
         return self.deriv/n
 
 
+    @cached_property
+    def degree(self):
+        return self.polynomial.order
+
+
+    def random_comparisons(self, degree=None, root_range=None, n=100):
+        if degree is None:
+            degree = self.degree
+
+        if root_range is None:
+            root_range = (self.E.min(), self.E.max())
+
+        left, right = root_range
+
+        polynomials = []
+        for _ in range(n):
+            roots = np.random.uniform(left, right, degree)
+            p = np.poly1d(roots, r=True)
+            pp = self.normalize_polynomial(p)
+            polynomials.append(pp)
+
+        return polynomials
+        
+
+
 
     def plot_Cn(self, ax=None):
         ax = self.ax if self.ax else ax
