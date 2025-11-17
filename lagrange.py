@@ -64,11 +64,7 @@ def kernel(L: LagrangePolynomial, z: complex):
     Bz = np.array([b(z).conjugate() for b in B])
     for l in B:
         K.append(l(z)*Bz)
-    return K
-
-
-
-
+    return np.array(K)
 
 
 def square_modulus(L: LagrangePolynomial, z: complex):
