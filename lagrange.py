@@ -47,7 +47,31 @@ def evaluate(L: LagrangePolynomial, z: complex):
     return ell(L)(z)*(d@L.values)
 
 
-def square_modulus(poly: LagrangePolynomial, z: complex):
+def basis_polynomials(L: LagrangePolynomial):
+    l = ell(L)
+    polys = []
+    weights = barycentric_weights(L)
+    for x, wk in zip(L.nodes, weights):
+        lk, _ = l/np.poly1d([x], r=True)
+        polys.append(lk*wk)
+    return polys
+
+
+
+def kernel(L: LagrangePolynomial, z: complex):
+    K = []
+    B = basis_polynomials(L)
+    Bz = np.array([b(z).conjugate() for b in B])
+    for l in B:
+        K.append(l(z)*Bz)
+    return K
+
+
+
+
+
+
+def square_modulus(L: LagrangePolynomial, z: complex):
     l = ell(L)
     d = displacement(L, z)
     terms = d*L.values
@@ -60,7 +84,7 @@ def sequence_sqmod(left, right):
     return np.array([t*right.conjugate() for t in left])
 
 
-def square_modulus(poly: LagrangePolynomial, z: complex):
+def square_modulus(L: LagrangePolynomial, z: complex):
     l = ell(L)
     d = displacement(L, z)
     terms = d*L.values
@@ -69,6 +93,6 @@ def square_modulus(poly: LagrangePolynomial, z: complex):
     return first_factor*second_factor
 
 
-def square_modulus_1d(poly: LagrangePolynomial, z: complex):
-    return sum(square_modulus(poly, z))
-        
+def square_modulus_1d(L: LagrangePolynomial, z: complex):
+    return sum(square_modulus(L, z))
+

@@ -7,6 +7,8 @@ Are there other situations?
 """
 
 from chebyshev import ChebyshevPolynomial
+from lagrange import LagrangePolynomial
+from lagrange import kernel, basis_polynomials
 
 import numpy as np
 from scipy.interpolate import lagrange
@@ -46,5 +48,12 @@ def test2(d, m):
 
 
 if __name__ == '__main__':
-    m = 2
-    test1(m)
+
+
+    P = ChebyshevPolynomial(polynomial=np.poly1d([1, 0, -2]))
+    L1 = LagrangePolynomial(P.critical_points, P(P.critical_points))    
+    T = ChebyshevPolynomial.classical(2)
+
+    L = LagrangePolynomial(P.critical_points, T(P.critical_points))
+    
+    z = [-1, 0, 1, 0.5, 1j, 1/2 + 1j/2]
