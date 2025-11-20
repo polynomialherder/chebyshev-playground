@@ -2,6 +2,7 @@ import hashlib
 import math
 import numbers
 import pickle
+import platform
 import random
 import time
 import warnings
@@ -17,23 +18,23 @@ import numpy as np
 import pandas as pd
 
 from lagrange import LagrangePolynomial
+from lagrange import safe_lagrange as lagrange
 from numpy.linalg import inv
 from numpy.ma import make_mask
 from numpy.polynomial.polynomial import Polynomial, polyfromroots
 from scipy.linalg import norm
-from scipy.interpolate import lagrange
 
 warnings.filterwarnings('ignore')
 
-matplotlib.rcParams.update({
-    "text.usetex": True,
-    "text.latex.preamble": r'\usepackage{amsmath}'
-})
+if platform.system() != 'Windows':
+    matplotlib.rcParams.update({
+        "text.usetex": True,
+        "text.latex.preamble": r'\usepackage{amsmath}'
+    })
 
 
 def T(n, x):
-    """ Classical Chebyshev polynomial implementation. Note that this implementation
-        is problematic performancewise since the last 2 arguments are both evaluated for all inputs
+    """ Classical Chebyshev polynomial implementation. 
     """
     return np.where(
         abs(x) <= 1,
@@ -68,12 +69,11 @@ class ChebyshevPolynomial:
     """ Generates a random degree n Chebyshev polynomial and domain E given a discretized space X
     """
 
-    def __init__(self, n=None, X=None, polynomial=None, seed=1, nodes=None, known_values=None, absolute=False):
-        if n is None and polynomial is None:
-            raise Exception("One of n or polynomial must be provided")
+    def __init__(self, n=None, X=None, polynomial=None, seed=1, nodes=None, values=None, absolute=False):
+        if not any([n, polynomial, nodes, values]):
+            raise Exception("One of n, polynomial, or nodes and values must be provided")
         if X is None:
             X = np.linspace(-20, 20, 1000)
-        self.n = n or polynomial.order
         self.X = X
         self.seed = seed
         self.domain_size = X.size
@@ -83,8 +83,12 @@ class ChebyshevPolynomial:
         self.fig = None
         self.ax = None
         self._nodes = nodes
-        self._known_values = known_values
+        self._known_values = values
         self.parent = None
+
+    @property
+    def n(self):
+        return self.n or self.polynomial.order
 
 
     @cached_property
@@ -107,9 +111,9 @@ class ChebyshevPolynomial:
 
     def normalize_polynomial(self, poly, discrete=False):
         if discrete:
-            c = poly / norm(poly(self.critical_points), np.Inf)
+            c = poly / norm(poly(self.critical_points), np.inf)
         else:
-            c = poly / norm(poly(self.E), np.Inf)
+            c = poly / norm(poly(self.E), np.inf)
         return c
 
 
@@ -239,7 +243,6 @@ class ChebyshevPolynomial:
         xv, yv, zv = self.calculate_grid(grid_radius, grid_midpoint, 1000)
 
         if ax_ is None:
-            print(f"{L=}, {R=}")
             self.initialize_plot()
             fig, ax = self.fig, self.ax
         else:

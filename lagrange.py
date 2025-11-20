@@ -3,6 +3,8 @@ from typing import List
 
 import numpy as np
 
+from scipy.interpolate import lagrange
+
 @dataclass
 class LagrangePolynomial:
     _nodes: list = field(default_factory=list)
@@ -20,6 +22,13 @@ class LagrangePolynomial:
         if not isinstance(self._values, np.ndarray):
             return np.array(self._values)
         return self._values
+
+
+def safe_lagrange(nodes, values):
+    p = lagrange(nodes, values)
+    if np.isclose(p.coef[0], 0):
+        p = np.poly1d(p.coef[1:])
+    return p
     
 
 def ell(L: LagrangePolynomial):
