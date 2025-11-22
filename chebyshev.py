@@ -264,6 +264,45 @@ class ChebyshevPolynomial:
 
 
 
+    def comparison_plots_(self, L, R, normalization=lambda p: 1, grid_midpoint=None, grid_radius=None, ax_=None, additional=None, saveto=None, title=None, suptitle=None):
+
+        if grid_midpoint is None or grid_radius is None:
+            xv, yv, zv = L.grid()
+        else:
+            xv, yv, zv = L.calculate_grid(grid_radius, grid_midpoint)
+
+
+        if ax_ is None:
+            fig, ax = plt.subplots()
+        else:
+            ax = ax_
+
+        Lzv = np.abs(L(zv))
+        holds = np.ones((1000, 1000))
+
+        for p in R:
+            pp = p/normalization(p)
+            holds = np.logical_and(holds, Lzv >= np.abs(pp(zv)))
+        
+        ax.contourf(xv, yv, holds)
+        if ax_ is None:
+            L.plot_disks(ax=ax)
+            if additional is not None:
+                ax.plot(additional.real, additional.imag, "o")
+            fig.show()
+
+
+    def comparison_plots(self, R, normalization=lambda p: 1, grid_midpoint=None, grid_radius=None, ax_=None, additional=None, saveto=None, title=None, suptitle=None):
+        self.comparison_plots_(self, R, normalization, grid_midpoint, grid_radius, ax_, additional, saveto, title, suptitle)
+
+        
+
+
+
+
+
+
+
     @staticmethod
     def in_set(intervals, point):
         for l, r in intervals:
