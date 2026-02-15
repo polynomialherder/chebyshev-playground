@@ -33,6 +33,14 @@ if platform.system() != 'Windows':
     })
 
 
+def randp(n, left_limit=-1, right_limit=1):
+    """ Generate a random degree n polynomial by choosing its roots from
+        [left_limit, right_limit]
+    """
+    return np.poly1d(np.random.uniform(left_limit, right_limit, n), r=True)
+    
+
+
 def T(n, x):
     """ Classical Chebyshev polynomial implementation. 
     """
@@ -57,7 +65,7 @@ def polynomial_factory(n, range_start=-10, range_end=10):
 class PartialFractionsDecomposition:
 
     eta: float
-    coefficients: np.array
+    coefficients: np.ndarray
     q: np.poly1d
     rem: np.poly1d
     diff: str
@@ -82,13 +90,14 @@ class ChebyshevPolynomial:
         # Figure and axis properties for plotting
         self.fig = None
         self.ax = None
+        self._n = n
         self._nodes = nodes
         self._known_values = values
         self.parent = None
 
     @property
     def n(self):
-        return self.n or self.polynomial.order
+        return self._n or self.polynomial.order
 
 
     @cached_property
@@ -106,15 +115,15 @@ class ChebyshevPolynomial:
 
     @cached_property
     def is_chebyshev(self):
-        return self.sign_changes == self.n
+        return self.sign_changes >= self.n
 
 
-    def normalize_polynomial(self, poly, discrete=False):
+    def normalize_polynomial(self, poly, discrete=False, as_chebyshev=False):
         if discrete:
             c = poly / norm(poly(self.critical_points), np.inf)
         else:
             c = poly / norm(poly(self.E), np.inf)
-        return c
+        return ChebyshevPolynomial(polynomial=c) if as_chebyshev else c
 
 
     def normalize(self, poly):
@@ -218,20 +227,32 @@ class ChebyshevPolynomial:
         return np.array(self.Ek_midpoints) + np.array(self.Ek_radii)*1j
 
 
-    def reversal(self):
-        return self._reversal(self)
-    
-
     def _reversal(self, p):
         return np.poly1d(p.coef[::-1])
     
 
-    def disk_reversal(self, r, q):
+    def disk_reversal(self, r, q, as_chebyshev=True):
         p = np.poly1d([r, q])
         u = np.poly1d([1/r, -q/r])
         Tp = self(p)
         R = self._reversal(Tp)
-        return R(u)
+        Ru = R(u)
+        return ChebyshevPolynomial(polynomial=Ru) if as_chebyshev else Ru
+
+
+    def reversal(self, as_chebyshev=True):
+        return self.disk_reversal(1, 0, as_chebyshev)
+
+
+    def comparison_polynomial_(self, n, left_limit, right_limit, normalization=lambda p: 1): 
+        p = randp(n, left_limit, right_limit)
+        return p / normalization(p)
+
+
+    def comparison_polynomial(self, normalization=None):
+        if normalization is None:
+            normalization = lambda p: norm(p(self.E), np.inf)
+        return self.comparison_polynomial_(self.n, self.E.min(), self.E.max(), normalization=normalization)
 
 
     def comparison_plot_(self, L, R, grid_midpoint, grid_radius, ax_=None, additional=None, saveto=None, title=None, suptitle=None):
