@@ -229,7 +229,7 @@ class ChebyshevPolynomial:
 
     def _reversal(self, p):
         return np.poly1d(p.coef[::-1])
-    
+
 
     def disk_reversal(self, r, q, as_chebyshev=True):
         p = np.poly1d([r, q])
@@ -244,7 +244,84 @@ class ChebyshevPolynomial:
         return self.disk_reversal(1, 0, as_chebyshev)
 
 
-    def comparison_polynomial_(self, n, left_limit, right_limit, normalization=lambda p: 1): 
+    def equimodular_polynomials(self, m, r):
+        return self.equimodular_polynomials_(m, r, self.polynomial)
+
+
+    @classmethod
+    def equimodular_polynomials_(cls, m, r, P, tol=1e-9):
+        """
+        return a list of polynomials Q(z) such that
+            |Q(z)| = |P(z)|  for all z with |z - m| = r.
+
+        These are the *finite Blaschke-flip family* for the given P
+        unique up to a unimodular constant
+
+        Reasonable for modest degrees (enumerates 2^n combinations of root flips).
+        """
+        if r <= 0:
+            raise ValueError("r must be > 0")
+        if not isinstance(P, np.poly1d):
+            P = np.poly1d(P)
+
+        # Map circle to unit circle via w = (z - m)/r, i.e. z = m + r w
+        z_of_w = np.poly1d([r, m])              # z = r*w + m
+        Qw = P(z_of_w)                          # Q(w) = P(m + r w)
+
+        deg = Qw.order
+        if deg < 0:
+            return [np.poly1d([0])]
+
+        # Factor Q(w) by roots
+        roots = np.roots(Qw.c) if deg > 0 else np.array([], dtype=complex)
+        lead = Qw.c[0]
+
+        def poly_from_factors(factors):
+            out = np.poly1d([1.0])
+            for f in factors:
+                out = np.polymul(out, f)
+            return out
+
+        # Build all flip-combinations in w
+        polys_w = []
+        for mask in range(1 << deg):
+            factors = []
+            for i, a in enumerate(roots):
+                if (mask >> i) & 1:
+                    # flip (w - a) -> (1 - conj(a) w)
+                    factors.append(np.poly1d([-np.conj(a), 1.0]))
+                else:
+                    factors.append(np.poly1d([1.0, -a]))
+            poly_w = lead * poly_from_factors(factors)
+            polys_w.append(np.poly1d(poly_w))
+
+        # Substitute w = (z - m)/r = (1/r) z + (-m/r)
+        w_of_z = np.poly1d([1.0 / r, -m / r])
+        polys_z = [np.poly1d(pw(w_of_z)) for pw in polys_w]
+
+        # dedupe up to a global unimodular constant
+        def canonical_key(poly):
+            c = np.array(poly.c, dtype=complex)
+            # normalize by leading coefficient to kill global scaling/phase
+            if np.allclose(c, 0, atol=tol):
+                c = c.copy()
+            else:
+                c = c / c[0]
+            # round real/imag for stable hashing
+            rr = np.round(c.real / tol) * tol
+            ii = np.round(c.imag / tol) * tol
+            return tuple(np.stack([rr, ii], axis=1).ravel())
+
+        seen = {}
+        for p in polys_z:
+            key = canonical_key(p)
+            if key not in seen:
+                seen[key] = p
+
+        return [cls(polynomial=p) for p in seen.values()]
+
+
+    def comparison_polynomial_(self, n, left_limit, right_limit, normalization=lambda p: 1):
         p = randp(n, left_limit, right_limit)
         return p / normalization(p)
 
@@ -268,7 +345,7 @@ class ChebyshevPolynomial:
             fig, ax = self.fig, self.ax
         else:
             ax = ax_
-            fig = ax.figure 
+            fig = ax.figure
 
         ax.contourf(xv, yv, np.abs(L(zv)) > np.abs(R(zv)))
 
@@ -304,7 +381,7 @@ class ChebyshevPolynomial:
         for p in R:
             pp = p/normalization(p)
             holds = np.logical_and(holds, Lzv >= np.abs(pp(zv)))
-        
+
         ax.contourf(xv, yv, holds)
         if ax_ is None:
             L.plot_disks(ax=ax)
@@ -315,13 +392,6 @@ class ChebyshevPolynomial:
 
     def comparison_plots(self, R, normalization=lambda p: 1, grid_midpoint=None, grid_radius=None, ax_=None, additional=None, saveto=None, title=None, suptitle=None):
         self.comparison_plots_(self, R, normalization, grid_midpoint, grid_radius, ax_, additional, saveto, title, suptitle)
-
-        
-
-
-
-
-
 
 
     @staticmethod
@@ -335,18 +405,18 @@ class ChebyshevPolynomial:
     def extremal_polynomial_(self, intervals, roots, evaluation_points=None):
 
         Q = np.poly1d(roots, r=True)
-        
+
         if evaluation_points is None:
             evaluation_points = []
 
         QQ = Q.integ(1)
-        
+
         eval_pts = [pt for pt in QQ.deriv().r if in_set(intervals, pt)]
         eval_pts += evaluation_points
 
         min_ = min(QQ(eval_pts))
         max_ = max(QQ(eval_pts))
-        
+
         # Normalize the polynomial so it has zero average on the interval
 
         normalization_set = np.concatenate([np.linspace(l, r, 1_000_000) for l, r in intervals])
@@ -367,7 +437,7 @@ class ChebyshevPolynomial:
 
     def extremal_polynomials(self):
         return self.extremal_polynomials_(self)
-            
+
 
 
     def comparison_plot(self, P, ax=None, additional=None, saveto=None, title=None, suptitle=None):
@@ -854,11 +924,11 @@ class ChebyshevPolynomial:
             polynomial = pickle.load(f)
         X = np.linspace(domain_minimum, domain_maximum, 1000000)
         return ChebyshevPolynomial(X=X, polynomial=polynomial)
-    
+
 
     @staticmethod
     def classical(n, kind=1):
-        # Degree n Classical Chebyshev polynomials of the second kind are defined in terms of 
+        # Degree n Classical Chebyshev polynomials of the second kind are defined in terms of
         # the degree n + 1 Chebyshev polynomials of the first kind
         if kind == 2:
             n = n + 1
@@ -866,7 +936,7 @@ class ChebyshevPolynomial:
         t = lambda n, m: (-1)**m * (n/(n-m)) * math.comb(n-m, m) * 2 **(n - 2*m - 1)
         coefs = [t(n, m//2) if m % 2 else 0 for m in range(n+2)]
         X = np.linspace(-1, 1, 1_000_000)
-        p = np.poly1d(coefs).deriv()/n if kind == 2 else np.poly1d(coefs) 
+        p = np.poly1d(coefs).deriv()/n if kind == 2 else np.poly1d(coefs)
         return ChebyshevPolynomial(X=X, polynomial=p)
 
     def U(self):
@@ -895,7 +965,7 @@ class ChebyshevPolynomial:
             polynomials.append(pp)
 
         return polynomials
-        
+
 
 
 
